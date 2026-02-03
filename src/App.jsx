@@ -76,6 +76,7 @@ const INITIAL_STUDENTS = [
     regNumber: 'PG/2023/001',
     program: 'PhD',
     supervisor: 'Dr. A. Smith',
+    coSupervisor: 'Prof. K. Mensah',
     status: 'Active',
     joinedDate: '2023-01-15',
     progress: {
@@ -89,6 +90,7 @@ const INITIAL_STUDENTS = [
     regNumber: 'PG/2024/055',
     program: 'MSc',
     supervisor: 'Prof. B. Johnson',
+    coSupervisor: '',
     status: 'Active',
     joinedDate: '2024-02-01',
     progress: {}
@@ -186,7 +188,7 @@ export default function App() {
   
   // Form States
   const [studentForm, setStudentForm] = useState({
-    name: '', regNumber: '', program: 'PhD', supervisor: '', joinedDate: ''
+    name: '', regNumber: '', program: 'PhD', supervisor: '', coSupervisor: '', joinedDate: ''
   });
   
   const [scheduleForm, setScheduleForm] = useState({
@@ -201,9 +203,13 @@ export default function App() {
     localStorage.setItem('pg_students', JSON.stringify(students));
   }, [students]);
 
-  // Derived Data: Supervisors List
+  // Derived Data: Supervisors List (Collects both Main and Co-Supervisors)
   const uniqueSupervisors = useMemo(() => {
-    const sups = new Set(students.map(s => s.supervisor).filter(Boolean));
+    const sups = new Set();
+    students.forEach(s => {
+      if(s.supervisor) sups.add(s.supervisor);
+      if(s.coSupervisor) sups.add(s.coSupervisor);
+    });
     return ['All Supervisors', ...Array.from(sups).sort()];
   }, [students]);
 
@@ -212,7 +218,11 @@ export default function App() {
     return students.filter(s => {
       const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                             s.regNumber.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesSupervisor = selectedSupervisor === 'All Supervisors' || s.supervisor === selectedSupervisor;
+      
+      const matchesSupervisor = selectedSupervisor === 'All Supervisors' || 
+                                s.supervisor === selectedSupervisor || 
+                                s.coSupervisor === selectedSupervisor;
+                                
       return matchesSearch && matchesSupervisor;
     });
   }, [students, searchTerm, selectedSupervisor]);
@@ -353,7 +363,7 @@ export default function App() {
     if (!scheduleForm.date || !selectedStudent) return;
     const stageLabel = PROGRAM_STRUCTURE[selectedStudent.program].stages.find(s => s.id === selectedStageId)?.label;
     const title = `${stageLabel}: ${selectedStudent.name} (${selectedStudent.regNumber})`;
-    const details = `Student: ${selectedStudent.name}\nProgram: ${selectedStudent.program}\nSupervisor: ${selectedStudent.supervisor}\n\nManaged via McU Postgrad Track.`;
+    const details = `Student: ${selectedStudent.name}\nProgram: ${selectedStudent.program}\nSupervisor: ${selectedStudent.supervisor}\nCo-Supervisor: ${selectedStudent.coSupervisor || 'N/A'}\n\nManaged via McU Postgrad Track.`;
     const location = scheduleForm.venue || 'TBA';
     const startDate = new Date(`${scheduleForm.date}T${scheduleForm.time || '09:00'}`);
     const endDate = new Date(startDate.getTime() + 60*60*1000);
@@ -366,12 +376,16 @@ export default function App() {
     if (!selectedStudent) return;
     const stageLabel = PROGRAM_STRUCTURE[selectedStudent.program].stages.find(s => s.id === selectedStageId)?.label;
     const subject = `Presentation Scheduled: ${selectedStudent.name} - ${stageLabel}`;
-    const body = `Dear ${selectedStudent.supervisor},\n\nThis is to notify you that the ${stageLabel} for ${selectedStudent.name} (${selectedStudent.regNumber}) has been scheduled.\n\nDate: ${formatDate(scheduleForm.date)}\nTime: ${scheduleForm.time || 'TBA'}\nVenue: ${scheduleForm.venue || 'TBA'}\n\nPlease ensure your availability.\n\nBest regards,\nPG Coordinator`;
+    
+    // Construct greeting including Co-Supervisor if present
+    const supervisors = [selectedStudent.supervisor, selectedStudent.coSupervisor].filter(Boolean).join(" and ");
+    
+    const body = `Dear ${supervisors},\n\nThis is to notify you that the ${stageLabel} for ${selectedStudent.name} (${selectedStudent.regNumber}) has been scheduled.\n\nDate: ${formatDate(scheduleForm.date)}\nTime: ${scheduleForm.time || 'TBA'}\nVenue: ${scheduleForm.venue || 'TBA'}\n\nPlease ensure your availability.\n\nBest regards,\nPG Coordinator`;
     window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
   const resetForms = () => {
-    setStudentForm({ name: '', regNumber: '', program: 'PhD', supervisor: '', joinedDate: '' });
+    setStudentForm({ name: '', regNumber: '', program: 'PhD', supervisor: '', coSupervisor: '', joinedDate: '' });
     setScheduleForm({ date: '', time: '', venue: '', status: 'scheduled', score: '', remarks: '', docLink: '' });
     setSelectedStudent(null);
     setSelectedStageId(null);
@@ -397,6 +411,7 @@ export default function App() {
         regNumber: student.regNumber,
         program: student.program,
         supervisor: student.supervisor,
+        coSupervisor: student.coSupervisor || '', // Handle potentially undefined old records
         joinedDate: student.joinedDate
       });
     } else {
@@ -408,9 +423,9 @@ export default function App() {
   // Export Functions
   const exportToCSV = () => {
     let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "Name,Reg Number,Program,Supervisor,Status,Progress %\n";
+    csvContent += "Name,Reg Number,Program,Supervisor,Co-Supervisor,Status,Progress %\n";
     filteredStudents.forEach(s => {
-      const row = `${s.name},${s.regNumber},${s.program},${s.supervisor},${s.status},${calculateProgress(s)}%`;
+      const row = `${s.name},${s.regNumber},${s.program},${s.supervisor},${s.coSupervisor || ''},${s.status},${calculateProgress(s)}%`;
       csvContent += row + "\n";
     });
     const encodedUri = encodeURI(csvContent);
@@ -525,7 +540,7 @@ export default function App() {
                 <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Student</th>
                 <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Program</th>
                 <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Progress</th>
-                <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Supervisor</th>
+                <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Supervisors</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -553,7 +568,10 @@ export default function App() {
                     </div>
                     <span className="text-xs text-gray-500 mt-1 block">{calculateProgress(s)}% Complete</span>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{s.supervisor}</td>
+                  <td className="px-6 py-4 text-sm text-gray-600">
+                    <div>{s.supervisor}</div>
+                    {s.coSupervisor && <div className="text-xs text-gray-400 mt-1">Co: {s.coSupervisor}</div>}
+                  </td>
                 </tr>
               ))}
               {filteredStudents.length === 0 && (
@@ -614,7 +632,11 @@ export default function App() {
                   <div className="flex flex-wrap gap-2 text-sm text-gray-500">
                     <span className="flex items-center"><FileText size={14} className="mr-1"/> {student.regNumber}</span>
                     <span className="hidden sm:inline">•</span>
-                    <span className="flex items-center"><Users size={14} className="mr-1"/> {student.supervisor}</span>
+                    <span className="flex items-center">
+                      <Users size={14} className="mr-1"/> 
+                      {student.supervisor}
+                      {student.coSupervisor && <span className="text-gray-400 ml-1 text-xs"> (& {student.coSupervisor})</span>}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -750,7 +772,10 @@ export default function App() {
                     <td className="py-3 px-2 font-medium">{s.regNumber}</td>
                     <td className="py-3 px-2 font-bold">{s.name}</td>
                     <td className="py-3 px-2">{s.program}</td>
-                    <td className="py-3 px-2">{s.supervisor}</td>
+                    <td className="py-3 px-2">
+                      <div>{s.supervisor}</div>
+                      {s.coSupervisor && <div className="text-xs text-gray-500">Co: {s.coSupervisor}</div>}
+                    </td>
                     <td className="py-3 px-2"><span className="px-2 py-1 bg-gray-200 rounded text-xs">{s.status}</span></td>
                     <td className="py-3 px-2 text-right font-bold">{calculateProgress(s)}%</td>
                   </tr>
@@ -1027,6 +1052,12 @@ export default function App() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Supervisor</label>
                 <input required type="text" placeholder="e.g. Prof. X. Y. Z" className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" 
                   value={studentForm.supervisor} onChange={e => setStudentForm({...studentForm, supervisor: e.target.value})} />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Co-Supervisor <span className="text-gray-400 font-normal">(Optional)</span></label>
+                <input type="text" placeholder="e.g. Dr. A. B. C" className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" 
+                  value={studentForm.coSupervisor} onChange={e => setStudentForm({...studentForm, coSupervisor: e.target.value})} />
               </div>
 
               <div className="pt-4 flex justify-end gap-3">
