@@ -23,7 +23,9 @@ import {
   Upload,
   ExternalLink,
   Bell,
-  Link
+  Link,
+  BarChart2,
+  PieChart
 } from 'lucide-react';
 
 /**
@@ -35,21 +37,24 @@ const PROGRAM_STRUCTURE = {
     label: "Post Graduate Diploma (PGD)",
     stages: [
       { id: 'final', label: 'Final Project Defense' }
-    ]
+    ],
+    color: 'bg-emerald-500'
   },
   MSc: {
     label: "Master of Science (MSc)",
     stages: [
       { id: 'predata', label: 'Pre-Data Seminar' },
       { id: 'postdata', label: 'Post-Data Seminar' }
-    ]
+    ],
+    color: 'bg-blue-500'
   },
   MPhil: {
     label: "Master of Philosophy (MPhil)",
     stages: [
       { id: 'predata', label: 'Pre-Data Seminar' },
       { id: 'postdata', label: 'Post-Data Seminar' }
-    ]
+    ],
+    color: 'bg-cyan-500'
   },
   PhD: {
     label: "Doctor of Philosophy (PhD)",
@@ -58,7 +63,8 @@ const PROGRAM_STRUCTURE = {
       { id: 'predata', label: 'Pre-Data Seminar' },
       { id: 'postdata', label: 'Post-Data Seminar' },
       { id: 'viva', label: 'Viva Voce' }
-    ]
+    ],
+    color: 'bg-purple-600'
   }
 };
 
@@ -108,6 +114,51 @@ const calculateProgress = (student) => {
     student.progress[stage.id]?.status === 'completed'
   ).length;
   return Math.round((completedStages / totalStages) * 100);
+};
+
+// --- CUSTOM MINI CHART COMPONENTS (Zero Dependency) ---
+const SimpleBarChart = ({ data, color }) => {
+  const max = Math.max(...data.map(d => d.value), 1);
+  return (
+    <div className="flex items-end h-32 gap-2 w-full pt-4">
+      {data.map((d, i) => (
+        <div key={i} className="flex-1 flex flex-col items-center group">
+          <div className="relative w-full flex justify-center">
+            <span className="absolute -top-6 text-xs font-bold text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity">
+              {d.value}
+            </span>
+            <div 
+              className={`w-full max-w-[40px] rounded-t-md transition-all duration-500 hover:opacity-80 ${d.color || color}`}
+              style={{ height: `${(d.value / max) * 100}px` }}
+            ></div>
+          </div>
+          <span className="text-[10px] text-gray-500 mt-2 font-medium truncate w-full text-center">{d.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const SimpleDonutChart = ({ data }) => {
+  // Calculate segments for conic-gradient
+  let currentAngle = 0;
+  const total = data.reduce((acc, curr) => acc + curr.value, 0) || 1;
+  
+  const segments = data.map(d => {
+    const start = currentAngle;
+    const degree = (d.value / total) * 360;
+    currentAngle += degree;
+    return `${d.color} ${start}deg ${currentAngle}deg`;
+  });
+
+  return (
+    <div className="relative w-32 h-32 rounded-full mx-auto" style={{ background: `conic-gradient(${segments.join(', ')})` }}>
+      <div className="absolute inset-4 bg-white rounded-full flex items-center justify-center flex-col">
+        <span className="text-xl font-bold text-gray-800">{total}</span>
+        <span className="text-[10px] text-gray-400 uppercase">Students</span>
+      </div>
+    </div>
+  );
 };
 
 /**
@@ -167,6 +218,42 @@ export default function App() {
     };
   }, [students]);
 
+  // Analytics Data
+  const analyticsData = useMemo(() => {
+    // 1. Program Distribution
+    const programs = ['PhD', 'MSc', 'MPhil', 'PGD'].map(prog => ({
+      label: prog,
+      value: students.filter(s => s.program === prog).length,
+      color: PROGRAM_STRUCTURE[prog]?.color?.replace('bg-', '') || 'gray-400' // Convert tailwind class to usable color ref if needed, but for CSS we need actual color values
+    })).filter(d => d.value > 0);
+    
+    // Convert Tailwind classes to CSS Hex/RGB for the gradient (simplified mapping)
+    const colorMap = { 
+      'PhD': '#9333ea', // purple-600
+      'MSc': '#3b82f6', // blue-500
+      'MPhil': '#06b6d4', // cyan-500
+      'PGD': '#10b981' // emerald-500
+    };
+    
+    const donutData = programs.map(p => ({ ...p, color: colorMap[p.label] || '#ccc' }));
+
+    // 2. Stage Pipeline (All students)
+    // Count how many students have COMPLETED specific key stages
+    const stages = [
+      { id: 'proposal', label: 'Proposal' },
+      { id: 'predata', label: 'Pre-Data' },
+      { id: 'postdata', label: 'Post-Data' },
+      { id: 'viva', label: 'Viva Voce' }
+    ];
+
+    const pipelineData = stages.map(stage => {
+      const count = students.filter(s => s.progress[stage.id]?.status === 'completed').length;
+      return { label: stage.label, value: count, color: 'bg-indigo-500' };
+    });
+
+    return { donutData, pipelineData };
+  }, [students]);
+
   // Actions
   const handleAddStudent = (e) => {
     e.preventDefault();
@@ -213,9 +300,7 @@ export default function App() {
   const handleExportData = () => {
     const dataStr = JSON.stringify(students, null, 2);
     const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-    
     const exportFileDefaultName = `mcu_postgrad_backup_${new Date().toISOString().slice(0,10)}.json`;
-    
     const linkElement = document.createElement('a');
     linkElement.setAttribute('href', dataUri);
     linkElement.setAttribute('download', exportFileDefaultName);
@@ -240,43 +325,35 @@ export default function App() {
             alert('Data restored successfully!');
           }
         } else {
-          alert('Invalid file format. Please upload a valid backup file.');
+          alert('Invalid file format.');
         }
       } catch (error) {
-        alert('Error parsing file. Please check if it is a valid JSON file.');
+        alert('Error parsing file.');
       }
     };
     reader.readAsText(fileObj);
-    event.target.value = null; // Reset input
+    event.target.value = null;
   };
 
   // --- External Integrations ---
   const handleAddToCalendar = () => {
     if (!scheduleForm.date || !selectedStudent) return;
-    
     const stageLabel = PROGRAM_STRUCTURE[selectedStudent.program].stages.find(s => s.id === selectedStageId)?.label;
     const title = `${stageLabel}: ${selectedStudent.name} (${selectedStudent.regNumber})`;
-    const details = `Student: ${selectedStudent.name}\nProgram: ${selectedStudent.program}\nSupervisor: ${selectedStudent.supervisor}\n\nThis presentation is managed via McU Postgrad Track.`;
+    const details = `Student: ${selectedStudent.name}\nProgram: ${selectedStudent.program}\nSupervisor: ${selectedStudent.supervisor}\n\nManaged via McU Postgrad Track.`;
     const location = scheduleForm.venue || 'TBA';
-    
-    // Construct Google Calendar Date format YYYYMMDDTHHMMSS
     const startDate = new Date(`${scheduleForm.date}T${scheduleForm.time || '09:00'}`);
-    const endDate = new Date(startDate.getTime() + 60*60*1000); // Add 1 hour
-    
+    const endDate = new Date(startDate.getTime() + 60*60*1000);
     const formatGCalDate = (date) => date.toISOString().replace(/-|:|\.\d\d\d/g, "");
-    
     const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${formatGCalDate(startDate)}/${formatGCalDate(endDate)}&details=${encodeURIComponent(details)}&location=${encodeURIComponent(location)}`;
-    
     window.open(url, '_blank');
   };
 
   const handleSendEmail = () => {
     if (!selectedStudent) return;
-    
     const stageLabel = PROGRAM_STRUCTURE[selectedStudent.program].stages.find(s => s.id === selectedStageId)?.label;
     const subject = `Presentation Scheduled: ${selectedStudent.name} - ${stageLabel}`;
     const body = `Dear ${selectedStudent.supervisor},\n\nThis is to notify you that the ${stageLabel} for ${selectedStudent.name} (${selectedStudent.regNumber}) has been scheduled.\n\nDate: ${formatDate(scheduleForm.date)}\nTime: ${scheduleForm.time || 'TBA'}\nVenue: ${scheduleForm.venue || 'TBA'}\n\nPlease ensure your availability.\n\nBest regards,\nPG Coordinator`;
-    
     window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
@@ -319,12 +396,10 @@ export default function App() {
   const exportToCSV = () => {
     let csvContent = "data:text/csv;charset=utf-8,";
     csvContent += "Name,Reg Number,Program,Supervisor,Status,Progress %\n";
-    
     filteredStudents.forEach(s => {
       const row = `${s.name},${s.regNumber},${s.program},${s.supervisor},${s.status},${calculateProgress(s)}%`;
       csvContent += row + "\n";
     });
-
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
@@ -342,14 +417,15 @@ export default function App() {
 
   const DashboardView = () => (
     <div className="space-y-6 animate-in fade-in duration-500">
+      {/* Top Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: 'Total Students', val: stats.total, icon: Users, color: 'bg-indigo-600' },
           { label: 'PhD Candidates', val: stats.phd, icon: GraduationCap, color: 'bg-purple-600' },
-          { label: 'MSc/MPhil', val: stats.msc, icon: FileText, color: 'bg-emerald-600' },
+          { label: 'MSc/MPhil', val: stats.msc, icon: FileText, color: 'bg-cyan-600' },
           { label: 'Upcoming Events', val: stats.upcoming, icon: Calendar, color: 'bg-amber-600' },
         ].map((stat, idx) => (
-          <div key={idx} className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 flex items-center justify-between">
+          <div key={idx} className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 flex items-center justify-between hover:shadow-md transition-shadow">
             <div>
               <p className="text-gray-500 text-sm font-medium">{stat.label}</p>
               <h3 className="text-3xl font-bold text-gray-800 mt-1">{stat.val}</h3>
@@ -361,10 +437,46 @@ export default function App() {
         ))}
       </div>
 
+      {/* Analytics Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* Chart 1: Program Distribution */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col items-center">
+          <div className="flex items-center gap-2 self-start mb-6">
+            <PieChart size={18} className="text-indigo-600" />
+            <h3 className="font-bold text-gray-800">Program Distribution</h3>
+          </div>
+          <SimpleDonutChart data={analyticsData.donutData} />
+          <div className="flex flex-wrap gap-3 justify-center mt-6">
+            {analyticsData.donutData.map((d, i) => (
+              <div key={i} className="flex items-center text-xs text-gray-600">
+                <span className="w-2 h-2 rounded-full mr-1" style={{ backgroundColor: d.color }}></span>
+                {d.label}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Chart 2: Academic Pipeline */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 lg:col-span-2">
+          <div className="flex items-center gap-2 mb-2">
+            <BarChart2 size={18} className="text-indigo-600" />
+            <h3 className="font-bold text-gray-800">Academic Pipeline (Completions)</h3>
+          </div>
+          <p className="text-sm text-gray-500 mb-4">Number of students who have completed each stage.</p>
+          <div className="bg-gray-50 rounded-lg p-4">
+            <SimpleBarChart data={analyticsData.pipelineData} color="bg-indigo-500" />
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Activity Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="p-6 border-b border-gray-100 flex justify-between items-center">
           <h2 className="text-lg font-bold text-gray-800">Recent Activity & Status</h2>
-          <button onClick={() => setActiveTab('students')} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium">View All</button>
+          <button onClick={() => setActiveTab('students')} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1">
+            View All <ChevronRight size={14} />
+          </button>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left">
@@ -378,7 +490,7 @@ export default function App() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {students.slice(0, 5).map(s => (
-                <tr key={s.id} className="hover:bg-gray-50">
+                <tr key={s.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4">
                     <div className="flex items-center">
                       <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600 mr-3">
@@ -390,7 +502,11 @@ export default function App() {
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">{s.program}</td>
+                  <td className="px-6 py-4 text-sm text-gray-600">
+                    <span className={`px-2 py-1 rounded text-xs font-medium text-white ${PROGRAM_STRUCTURE[s.program]?.color || 'bg-gray-500'}`}>
+                      {s.program}
+                    </span>
+                  </td>
                   <td className="px-6 py-4">
                     <div className="w-full bg-gray-200 rounded-full h-2 max-w-[100px]">
                       <div className="bg-indigo-600 h-2 rounded-full" style={{ width: `${calculateProgress(s)}%` }}></div>
@@ -434,7 +550,7 @@ export default function App() {
             <div className="p-4 sm:p-6 border-b border-gray-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div className="flex items-center gap-4">
                 <div className={`h-12 w-12 rounded-lg flex items-center justify-center text-lg font-bold text-white shadow-sm
-                  ${student.program === 'PhD' ? 'bg-purple-600' : 'bg-indigo-600'}`}>
+                  ${PROGRAM_STRUCTURE[student.program]?.color || 'bg-gray-600'}`}>
                   {student.program}
                 </div>
                 <div>
@@ -491,7 +607,6 @@ export default function App() {
                         <div className="text-xs text-gray-400 italic py-1">Click to schedule</div>
                       )}
 
-                      {/* Document Link Icon - Quick Access */}
                       {data?.docLink && (
                         <a 
                           href={data.docLink} 
