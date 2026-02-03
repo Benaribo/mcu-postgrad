@@ -25,7 +25,8 @@ import {
   Bell,
   Link,
   BarChart2,
-  PieChart
+  PieChart,
+  Filter
 } from 'lucide-react';
 
 /**
@@ -172,6 +173,9 @@ export default function App() {
     return saved ? JSON.parse(saved) : INITIAL_STUDENTS;
   });
   
+  // Supervisor Filter State
+  const [selectedSupervisor, setSelectedSupervisor] = useState('All Supervisors');
+  
   // Modal States
   const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
@@ -197,48 +201,57 @@ export default function App() {
     localStorage.setItem('pg_students', JSON.stringify(students));
   }, [students]);
 
-  // Derived Data
+  // Derived Data: Supervisors List
+  const uniqueSupervisors = useMemo(() => {
+    const sups = new Set(students.map(s => s.supervisor).filter(Boolean));
+    return ['All Supervisors', ...Array.from(sups).sort()];
+  }, [students]);
+
+  // Derived Data: Filtered Students
   const filteredStudents = useMemo(() => {
-    return students.filter(s => 
-      s.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-      s.regNumber.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [students, searchTerm]);
+    return students.filter(s => {
+      const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                            s.regNumber.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSupervisor = selectedSupervisor === 'All Supervisors' || s.supervisor === selectedSupervisor;
+      return matchesSearch && matchesSupervisor;
+    });
+  }, [students, searchTerm, selectedSupervisor]);
 
   const stats = useMemo(() => {
+    // Calculate stats based on FILTERED students to reflect the view
+    const sourceData = filteredStudents;
     return {
-      total: students.length,
-      phd: students.filter(s => s.program === 'PhD').length,
-      msc: students.filter(s => s.program === 'MSc').length,
-      active: students.filter(s => s.status === 'Active').length,
-      upcoming: students.reduce((acc, curr) => {
+      total: sourceData.length,
+      phd: sourceData.filter(s => s.program === 'PhD').length,
+      msc: sourceData.filter(s => s.program === 'MSc').length,
+      active: sourceData.filter(s => s.status === 'Active').length,
+      upcoming: sourceData.reduce((acc, curr) => {
         const hasUpcoming = Object.values(curr.progress).some(p => p.status === 'scheduled');
         return hasUpcoming ? acc + 1 : acc;
       }, 0)
     };
-  }, [students]);
+  }, [filteredStudents]);
 
   // Analytics Data
   const analyticsData = useMemo(() => {
-    // 1. Program Distribution
+    // 1. Program Distribution (Based on filtered data)
     const programs = ['PhD', 'MSc', 'MPhil', 'PGD'].map(prog => ({
       label: prog,
-      value: students.filter(s => s.program === prog).length,
-      color: PROGRAM_STRUCTURE[prog]?.color?.replace('bg-', '') || 'gray-400' // Convert tailwind class to usable color ref if needed, but for CSS we need actual color values
+      value: filteredStudents.filter(s => s.program === prog).length,
+      color: PROGRAM_STRUCTURE[prog]?.color?.replace('bg-', '') || 'gray-400' 
     })).filter(d => d.value > 0);
     
-    // Convert Tailwind classes to CSS Hex/RGB for the gradient (simplified mapping)
+    // Simplified color map for charts
     const colorMap = { 
-      'PhD': '#9333ea', // purple-600
-      'MSc': '#3b82f6', // blue-500
-      'MPhil': '#06b6d4', // cyan-500
-      'PGD': '#10b981' // emerald-500
+      'PhD': '#9333ea', 
+      'MSc': '#3b82f6', 
+      'MPhil': '#06b6d4', 
+      'PGD': '#10b981' 
     };
     
     const donutData = programs.map(p => ({ ...p, color: colorMap[p.label] || '#ccc' }));
 
-    // 2. Stage Pipeline (All students)
-    // Count how many students have COMPLETED specific key stages
+    // 2. Stage Pipeline (Based on filtered data)
     const stages = [
       { id: 'proposal', label: 'Proposal' },
       { id: 'predata', label: 'Pre-Data' },
@@ -247,12 +260,12 @@ export default function App() {
     ];
 
     const pipelineData = stages.map(stage => {
-      const count = students.filter(s => s.progress[stage.id]?.status === 'completed').length;
+      const count = filteredStudents.filter(s => s.progress[stage.id]?.status === 'completed').length;
       return { label: stage.label, value: count, color: 'bg-indigo-500' };
     });
 
     return { donutData, pipelineData };
-  }, [students]);
+  }, [filteredStudents]);
 
   // Actions
   const handleAddStudent = (e) => {
@@ -413,10 +426,33 @@ export default function App() {
     window.print();
   };
 
+  // --- REUSABLE SUPERVISOR FILTER COMPONENT ---
+  const SupervisorFilter = () => (
+    <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm">
+      <Filter size={16} className="text-gray-400" />
+      <select 
+        value={selectedSupervisor}
+        onChange={(e) => setSelectedSupervisor(e.target.value)}
+        className="bg-transparent text-sm text-gray-700 outline-none cursor-pointer w-full sm:w-auto"
+      >
+        {uniqueSupervisors.map(sup => (
+          <option key={sup} value={sup}>{sup}</option>
+        ))}
+      </select>
+    </div>
+  );
+
   // --- VIEWS ---
 
   const DashboardView = () => (
     <div className="space-y-6 animate-in fade-in duration-500">
+      
+      {/* Dashboard Header with Filter */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <h2 className="text-xl font-bold text-gray-800">Overview</h2>
+        <SupervisorFilter />
+      </div>
+
       {/* Top Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
@@ -446,7 +482,11 @@ export default function App() {
             <PieChart size={18} className="text-indigo-600" />
             <h3 className="font-bold text-gray-800">Program Distribution</h3>
           </div>
-          <SimpleDonutChart data={analyticsData.donutData} />
+          {analyticsData.donutData.length > 0 ? (
+            <SimpleDonutChart data={analyticsData.donutData} />
+          ) : (
+            <div className="h-32 flex items-center text-gray-400 text-sm">No data available</div>
+          )}
           <div className="flex flex-wrap gap-3 justify-center mt-6">
             {analyticsData.donutData.map((d, i) => (
               <div key={i} className="flex items-center text-xs text-gray-600">
@@ -489,7 +529,7 @@ export default function App() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {students.slice(0, 5).map(s => (
+              {filteredStudents.slice(0, 5).map(s => (
                 <tr key={s.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4">
                     <div className="flex items-center">
@@ -516,6 +556,11 @@ export default function App() {
                   <td className="px-6 py-4 text-sm text-gray-600">{s.supervisor}</td>
                 </tr>
               ))}
+              {filteredStudents.length === 0 && (
+                <tr>
+                  <td colSpan="4" className="text-center py-8 text-gray-400">No students found matching current filters.</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -525,23 +570,34 @@ export default function App() {
 
   const StudentsView = () => (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-        <div className="relative w-full sm:w-96">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
-          <input 
-            type="text" 
-            placeholder="Search students..." 
-            className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+      <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+        <div className="flex flex-1 gap-4 w-full">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+            <input 
+              type="text" 
+              placeholder="Search students..." 
+              className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <div className="hidden md:block">
+            <SupervisorFilter />
+          </div>
         </div>
-        <button 
-          onClick={() => openStudentModal()}
-          className="w-full sm:w-auto flex items-center justify-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
-        >
-          <Plus size={18} className="mr-2" /> Add Student
-        </button>
+        
+        <div className="flex gap-2 w-full md:w-auto">
+          <div className="md:hidden flex-1">
+             <SupervisorFilter />
+          </div>
+          <button 
+            onClick={() => openStudentModal()}
+            className="flex-shrink-0 flex items-center justify-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
+          >
+            <Plus size={18} className="mr-2" /> <span className="hidden sm:inline">Add Student</span><span className="sm:hidden">Add</span>
+          </button>
+        </div>
       </div>
 
       <div className="grid gap-4">
@@ -631,7 +687,7 @@ export default function App() {
           <div className="text-center py-12 bg-gray-50 rounded-xl border border-dashed border-gray-200">
             <Users size={48} className="mx-auto text-gray-300 mb-4" />
             <h3 className="text-lg font-medium text-gray-900">No students found</h3>
-            <p className="text-gray-500">Try adjusting your search or add a new student.</p>
+            <p className="text-gray-500">Try adjusting your filters or search.</p>
           </div>
         )}
       </div>
@@ -643,7 +699,10 @@ export default function App() {
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between items-center gap-4 no-print">
         <div>
           <h2 className="text-xl font-bold text-gray-800">Generate Reports</h2>
-          <p className="text-gray-500">Export student data and presentation schedules for the PG College.</p>
+          <p className="text-gray-500">Export student data. Use the filter below to refine the report.</p>
+          <div className="mt-4">
+             <SupervisorFilter />
+          </div>
         </div>
         <div className="flex gap-3">
           <button onClick={exportToCSV} className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-sm">
@@ -661,6 +720,14 @@ export default function App() {
           <h2 className="text-xl font-bold text-indigo-900 uppercase mt-2">College of Computing</h2>
           <div className="w-24 h-1 bg-indigo-900 mx-auto my-4"></div>
           <h3 className="text-lg text-gray-600 font-medium uppercase tracking-widest">Postgraduate Student Progress Report</h3>
+          
+          {/* Show active filter in print view */}
+          {selectedSupervisor !== 'All Supervisors' && (
+             <p className="text-sm font-bold text-indigo-700 mt-2 bg-indigo-50 inline-block px-3 py-1 rounded-full border border-indigo-100">
+               Supervisor: {selectedSupervisor}
+             </p>
+          )}
+          
           <p className="text-sm text-gray-400 mt-2">Generated on {new Date().toLocaleDateString()}</p>
         </div>
 
@@ -704,6 +771,11 @@ export default function App() {
                   </tr>
                 </React.Fragment>
               ))}
+              {filteredStudents.length === 0 && (
+                <tr>
+                  <td colSpan="6" className="text-center py-8 text-gray-400">No students found.</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
