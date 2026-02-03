@@ -20,7 +20,9 @@ import {
   Mail,
   Settings,
   Save,
-  Upload
+  Upload,
+  ExternalLink,
+  Bell
 } from 'lucide-react';
 
 /**
@@ -245,6 +247,36 @@ export default function App() {
     };
     reader.readAsText(fileObj);
     event.target.value = null; // Reset input
+  };
+
+  // --- External Integrations ---
+  const handleAddToCalendar = () => {
+    if (!scheduleForm.date || !selectedStudent) return;
+    
+    const stageLabel = PROGRAM_STRUCTURE[selectedStudent.program].stages.find(s => s.id === selectedStageId)?.label;
+    const title = `${stageLabel}: ${selectedStudent.name} (${selectedStudent.regNumber})`;
+    const details = `Student: ${selectedStudent.name}\nProgram: ${selectedStudent.program}\nSupervisor: ${selectedStudent.supervisor}\n\nThis presentation is managed via McU Postgrad Track.`;
+    const location = scheduleForm.venue || 'TBA';
+    
+    // Construct Google Calendar Date format YYYYMMDDTHHMMSS
+    const startDate = new Date(`${scheduleForm.date}T${scheduleForm.time || '09:00'}`);
+    const endDate = new Date(startDate.getTime() + 60*60*1000); // Add 1 hour
+    
+    const formatGCalDate = (date) => date.toISOString().replace(/-|:|\.\d\d\d/g, "");
+    
+    const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${formatGCalDate(startDate)}/${formatGCalDate(endDate)}&details=${encodeURIComponent(details)}&location=${encodeURIComponent(location)}`;
+    
+    window.open(url, '_blank');
+  };
+
+  const handleSendEmail = () => {
+    if (!selectedStudent) return;
+    
+    const stageLabel = PROGRAM_STRUCTURE[selectedStudent.program].stages.find(s => s.id === selectedStageId)?.label;
+    const subject = `Presentation Scheduled: ${selectedStudent.name} - ${stageLabel}`;
+    const body = `Dear ${selectedStudent.supervisor},\n\nThis is to notify you that the ${stageLabel} for ${selectedStudent.name} (${selectedStudent.regNumber}) has been scheduled.\n\nDate: ${formatDate(scheduleForm.date)}\nTime: ${scheduleForm.time || 'TBA'}\nVenue: ${scheduleForm.venue || 'TBA'}\n\nPlease ensure your availability.\n\nBest regards,\nPG Coordinator`;
+    
+    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
   const resetForms = () => {
@@ -848,6 +880,31 @@ export default function App() {
                     value={scheduleForm.time} onChange={e => setScheduleForm({...scheduleForm, time: e.target.value})} />
                 </div>
               </div>
+              
+              {/* Communication & Scheduling Features - Only show if scheduled and has date */}
+              {scheduleForm.status === 'scheduled' && scheduleForm.date && (
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 animate-in fade-in">
+                  <h4 className="text-xs font-bold text-blue-800 uppercase tracking-wider mb-2 flex items-center gap-2">
+                    <Bell size={14} /> Communication & Scheduling
+                  </h4>
+                  <div className="flex gap-3">
+                    <button 
+                      type="button" 
+                      onClick={handleAddToCalendar}
+                      className="flex-1 py-2 bg-white border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-50 text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+                    >
+                      <ExternalLink size={14} /> Add to G-Calendar
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={handleSendEmail}
+                      className="flex-1 py-2 bg-white border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-50 text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+                    >
+                      <Mail size={14} /> Notify Supervisor
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {scheduleForm.status === 'completed' && (
                 <div className="bg-green-50 p-4 rounded-lg border border-green-100 space-y-3 animate-in fade-in">
