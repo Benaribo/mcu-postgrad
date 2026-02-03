@@ -26,7 +26,8 @@ import {
   Link,
   BarChart2,
   PieChart,
-  Filter
+  Filter,
+  UserCheck
 } from 'lucide-react';
 
 /**
@@ -74,6 +75,7 @@ const INITIAL_STUDENTS = [
     id: '1',
     name: 'John Doe',
     regNumber: 'PG/2023/001',
+    email: 'john.doe@university.edu.ng',
     program: 'PhD',
     supervisor: 'Dr. A. Smith',
     coSupervisor: 'Prof. K. Mensah',
@@ -88,6 +90,7 @@ const INITIAL_STUDENTS = [
     id: '2',
     name: 'Jane Ubong',
     regNumber: 'PG/2024/055',
+    email: 'jane.ubong@university.edu.ng',
     program: 'MSc',
     supervisor: 'Prof. B. Johnson',
     coSupervisor: '',
@@ -188,7 +191,7 @@ export default function App() {
   
   // Form States
   const [studentForm, setStudentForm] = useState({
-    name: '', regNumber: '', program: 'PhD', supervisor: '', coSupervisor: '', joinedDate: ''
+    name: '', regNumber: '', email: '', program: 'PhD', supervisor: '', coSupervisor: '', joinedDate: ''
   });
   
   const [scheduleForm, setScheduleForm] = useState({
@@ -204,11 +207,12 @@ export default function App() {
   }, [students]);
 
   // Derived Data: Supervisors List (Collects both Main and Co-Supervisors)
+  // Use trim() to normalize names and prevent duplicates
   const uniqueSupervisors = useMemo(() => {
     const sups = new Set();
     students.forEach(s => {
-      if(s.supervisor) sups.add(s.supervisor);
-      if(s.coSupervisor) sups.add(s.coSupervisor);
+      if(s.supervisor) sups.add(s.supervisor.trim());
+      if(s.coSupervisor) sups.add(s.coSupervisor.trim());
     });
     return ['All Supervisors', ...Array.from(sups).sort()];
   }, [students]);
@@ -220,8 +224,8 @@ export default function App() {
                             s.regNumber.toLowerCase().includes(searchTerm.toLowerCase());
       
       const matchesSupervisor = selectedSupervisor === 'All Supervisors' || 
-                                s.supervisor === selectedSupervisor || 
-                                s.coSupervisor === selectedSupervisor;
+                                (s.supervisor && s.supervisor.trim() === selectedSupervisor) || 
+                                (s.coSupervisor && s.coSupervisor.trim() === selectedSupervisor);
                                 
       return matchesSearch && matchesSupervisor;
     });
@@ -384,8 +388,21 @@ export default function App() {
     window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
+  const handleNotifyStudent = () => {
+    if (!selectedStudent) return;
+    if (!selectedStudent.email) {
+      alert("Please update the student record with an email address first.");
+      return;
+    }
+    const stageLabel = PROGRAM_STRUCTURE[selectedStudent.program].stages.find(s => s.id === selectedStageId)?.label;
+    const subject = `Upcoming Presentation: ${stageLabel}`;
+    const body = `Dear ${selectedStudent.name},\n\nYou have been scheduled for your ${stageLabel}.\n\nDate: ${formatDate(scheduleForm.date)}\nTime: ${scheduleForm.time || 'TBA'}\nVenue: ${scheduleForm.venue || 'TBA'}\n\nPlease arrive 30 minutes early.\n\nBest regards,\nPG College`;
+    
+    window.location.href = `mailto:${selectedStudent.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+
   const resetForms = () => {
-    setStudentForm({ name: '', regNumber: '', program: 'PhD', supervisor: '', coSupervisor: '', joinedDate: '' });
+    setStudentForm({ name: '', regNumber: '', email: '', program: 'PhD', supervisor: '', coSupervisor: '', joinedDate: '' });
     setScheduleForm({ date: '', time: '', venue: '', status: 'scheduled', score: '', remarks: '', docLink: '' });
     setSelectedStudent(null);
     setSelectedStageId(null);
@@ -409,9 +426,10 @@ export default function App() {
       setStudentForm({
         name: student.name,
         regNumber: student.regNumber,
+        email: student.email || '',
         program: student.program,
         supervisor: student.supervisor,
-        coSupervisor: student.coSupervisor || '', // Handle potentially undefined old records
+        coSupervisor: student.coSupervisor || '', 
         joinedDate: student.joinedDate
       });
     } else {
@@ -423,9 +441,9 @@ export default function App() {
   // Export Functions
   const exportToCSV = () => {
     let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "Name,Reg Number,Program,Supervisor,Co-Supervisor,Status,Progress %\n";
+    csvContent += "Name,Reg Number,Email,Program,Supervisor,Co-Supervisor,Status,Progress %\n";
     filteredStudents.forEach(s => {
-      const row = `${s.name},${s.regNumber},${s.program},${s.supervisor},${s.coSupervisor || ''},${s.status},${calculateProgress(s)}%`;
+      const row = `${s.name},${s.regNumber},${s.email || ''},${s.program},${s.supervisor},${s.coSupervisor || ''},${s.status},${calculateProgress(s)}%`;
       csvContent += row + "\n";
     });
     const encodedUri = encodeURI(csvContent);
@@ -1049,6 +1067,12 @@ export default function App() {
               </div>
 
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email <span className="text-gray-400 font-normal">(Required for notifications)</span></label>
+                <input type="email" placeholder="student@university.edu.ng" className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" 
+                  value={studentForm.email} onChange={e => setStudentForm({...studentForm, email: e.target.value})} />
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Supervisor</label>
                 <input required type="text" placeholder="e.g. Prof. X. Y. Z" className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" 
                   value={studentForm.supervisor} onChange={e => setStudentForm({...studentForm, supervisor: e.target.value})} />
@@ -1137,20 +1161,27 @@ export default function App() {
                   <h4 className="text-xs font-bold text-blue-800 uppercase tracking-wider mb-2 flex items-center gap-2">
                     <Bell size={14} /> Communication & Scheduling
                   </h4>
-                  <div className="flex gap-3">
+                  <div className="flex gap-2 flex-wrap">
                     <button 
                       type="button" 
                       onClick={handleAddToCalendar}
-                      className="flex-1 py-2 bg-white border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-50 text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+                      className="flex-1 py-2 bg-white border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-50 text-sm font-medium flex items-center justify-center gap-2 transition-colors whitespace-nowrap"
                     >
-                      <ExternalLink size={14} /> Add to G-Calendar
+                      <ExternalLink size={14} /> Add to Calendar
                     </button>
                     <button 
                       type="button" 
                       onClick={handleSendEmail}
-                      className="flex-1 py-2 bg-white border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-50 text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+                      className="flex-1 py-2 bg-white border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-50 text-sm font-medium flex items-center justify-center gap-2 transition-colors whitespace-nowrap"
                     >
                       <Mail size={14} /> Notify Supervisor
+                    </button>
+                    <button 
+                      type="button" 
+                      onClick={handleNotifyStudent}
+                      className="flex-1 py-2 bg-indigo-600 border border-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium flex items-center justify-center gap-2 transition-colors whitespace-nowrap shadow-sm"
+                    >
+                      <UserCheck size={14} /> Notify Student
                     </button>
                   </div>
                 </div>
