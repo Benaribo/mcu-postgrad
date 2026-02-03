@@ -15,7 +15,9 @@ import {
   X,
   Edit,
   Trash2,
-  GraduationCap
+  GraduationCap,
+  Globe,
+  Mail
 } from 'lucide-react';
 
 /**
@@ -513,7 +515,7 @@ export default function App() {
       <style>{`
         @media print {
           /* HIDE EVERYTHING by default using common classes */
-          .no-print, aside, nav, .sidebar, .banner, header { 
+          .no-print, aside, nav, .sidebar, .banner, header, footer { 
             display: none !important; 
           }
           
@@ -598,7 +600,7 @@ export default function App() {
       </div>
 
       {/* Main Content */}
-      <main className="md:ml-64 min-h-screen transition-all">
+      <main className="md:ml-64 min-h-screen transition-all flex flex-col">
         {/* Mobile Header */}
         <div className="md:hidden bg-white p-4 flex items-center justify-between border-b border-gray-200 no-print">
           <div className="font-bold text-lg">McU Postgrad</div>
@@ -619,11 +621,26 @@ export default function App() {
           </div>
         </div>
 
-        <div className="p-4 sm:p-8 max-w-7xl mx-auto">
+        <div className="p-4 sm:p-8 max-w-7xl mx-auto w-full flex-1">
           {activeTab === 'dashboard' && <DashboardView />}
           {activeTab === 'students' && <StudentsView />}
           {activeTab === 'reports' && <ReportView />}
         </div>
+
+        {/* Footer */}
+        <footer className="bg-white border-t border-gray-200 mt-auto no-print">
+          <div className="max-w-7xl mx-auto py-6 px-4 sm:px-8 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div className="text-sm text-gray-500 text-center md:text-left">
+              <p className="font-medium text-gray-700">McPherson University</p>
+              <p>&copy; {new Date().getFullYear()} College of Computing. All rights reserved.</p>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-gray-400">
+               <GraduationCap size={14} />
+               <span>Postgraduate Management Portal</span>
+            </div>
+          </div>
+        </footer>
+
       </main>
 
       {/* Student Modal */}
