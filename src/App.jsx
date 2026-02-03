@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   LayoutDashboard, 
   Users, 
@@ -17,7 +17,10 @@ import {
   Trash2,
   GraduationCap,
   Globe,
-  Mail
+  Mail,
+  Settings,
+  Save,
+  Upload
 } from 'lucide-react';
 
 /**
@@ -133,6 +136,7 @@ export default function App() {
   });
 
   const [searchTerm, setSearchTerm] = useState('');
+  const fileInputRef = useRef(null);
 
   // Persistence
   useEffect(() => {
@@ -200,6 +204,47 @@ export default function App() {
     setStudents(updatedStudents);
     setIsScheduleModalOpen(false);
     resetForms();
+  };
+
+  // Data Management Actions
+  const handleExportData = () => {
+    const dataStr = JSON.stringify(students, null, 2);
+    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+    
+    const exportFileDefaultName = `mcu_postgrad_backup_${new Date().toISOString().slice(0,10)}.json`;
+    
+    const linkElement = document.createElement('a');
+    linkElement.setAttribute('href', dataUri);
+    linkElement.setAttribute('download', exportFileDefaultName);
+    linkElement.click();
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleImportFile = (event) => {
+    const fileObj = event.target.files && event.target.files[0];
+    if (!fileObj) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const json = JSON.parse(e.target.result);
+        if (Array.isArray(json)) {
+          if(confirm(`This will overwrite your current data with ${json.length} student records. Continue?`)) {
+            setStudents(json);
+            alert('Data restored successfully!');
+          }
+        } else {
+          alert('Invalid file format. Please upload a valid backup file.');
+        }
+      } catch (error) {
+        alert('Error parsing file. Please check if it is a valid JSON file.');
+      }
+    };
+    reader.readAsText(fileObj);
+    event.target.value = null; // Reset input
   };
 
   const resetForms = () => {
@@ -509,6 +554,66 @@ export default function App() {
     </div>
   );
 
+  const SettingsView = () => (
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <h2 className="text-xl font-bold text-gray-800 mb-2">System Settings & Data Management</h2>
+        <p className="text-gray-500">Manage your application data locally. Ensure you backup regularly.</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Backup Card */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between h-full">
+          <div>
+            <div className="w-12 h-12 bg-indigo-50 rounded-lg flex items-center justify-center text-indigo-600 mb-4">
+              <Save size={24} />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Backup Data</h3>
+            <p className="text-gray-500 text-sm mb-6">
+              Download a complete copy of your student database as a JSON file. 
+              Save this file to your computer or cloud storage to prevent data loss.
+            </p>
+          </div>
+          <button 
+            onClick={handleExportData}
+            className="w-full py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium flex items-center justify-center gap-2"
+          >
+            <Download size={18} /> Download Backup
+          </button>
+        </div>
+
+        {/* Restore Card */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between h-full">
+          <div>
+            <div className="w-12 h-12 bg-amber-50 rounded-lg flex items-center justify-center text-amber-600 mb-4">
+              <Upload size={24} />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Restore Data</h3>
+            <p className="text-gray-500 text-sm mb-6">
+              Upload a previously saved backup file to restore your student records.
+              <span className="block mt-2 text-red-500 font-medium text-xs bg-red-50 p-2 rounded">
+                Warning: This will overwrite your current data.
+              </span>
+            </p>
+          </div>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleImportFile} 
+            accept=".json" 
+            className="hidden" 
+          />
+          <button 
+            onClick={handleImportClick}
+            className="w-full py-3 bg-white border-2 border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-all font-medium flex items-center justify-center gap-2"
+          >
+            <Upload size={18} /> Restore from File
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800 font-sans">
       {/* CSS for Printing */}
@@ -573,6 +678,7 @@ export default function App() {
               { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
               { id: 'students', icon: Users, label: 'Students' },
               { id: 'reports', icon: FileText, label: 'Reports' },
+              { id: 'settings', icon: Settings, label: 'Settings' },
             ].map((item) => (
               <button
                 key={item.id}
@@ -625,6 +731,7 @@ export default function App() {
           {activeTab === 'dashboard' && <DashboardView />}
           {activeTab === 'students' && <StudentsView />}
           {activeTab === 'reports' && <ReportView />}
+          {activeTab === 'settings' && <SettingsView />}
         </div>
 
         {/* Footer */}
