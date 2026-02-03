@@ -30,7 +30,8 @@ import {
   UserCheck,
   Clock3,
   Archive,
-  UserPlus
+  UserPlus,
+  ArrowLeft
 } from 'lucide-react';
 
 /**
@@ -191,6 +192,7 @@ export default function App() {
   const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
+  const [reportStudent, setReportStudent] = useState(null); // For individual report
   const [selectedStageId, setSelectedStageId] = useState(null);
   
   const [studentForm, setStudentForm] = useState({
@@ -313,6 +315,11 @@ export default function App() {
       joinedDate: new Date().toISOString().split('T')[0]
     });
     setIsStudentModalOpen(true);
+  };
+
+  const handleOpenIndividualReport = (student) => {
+    setReportStudent(student);
+    setActiveTab('individual_report');
   };
 
   const handleScheduleSave = (e) => {
@@ -661,6 +668,13 @@ export default function App() {
                   </div>
                 </div>
                 <div className="flex gap-2 w-full sm:w-auto">
+                  <button 
+                    onClick={() => handleOpenIndividualReport(student)}
+                    className="flex-1 sm:flex-none px-3 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-200 flex items-center justify-center"
+                    title="Print Official Report"
+                  >
+                    <Printer size={16} />
+                  </button>
                   <button onClick={() => openStudentModal(student)} className="flex-1 sm:flex-none px-3 py-2 text-sm font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200">
                     Edit
                   </button>
@@ -762,12 +776,21 @@ export default function App() {
               </div>
             </div>
             
-            <button 
-              onClick={() => handlePromote(student)}
-              className="px-4 py-2 bg-white border border-indigo-200 text-indigo-700 rounded-lg hover:bg-indigo-50 hover:border-indigo-300 transition-all font-medium flex items-center shadow-sm"
-            >
-              <UserPlus size={18} className="mr-2" /> Start New Program
-            </button>
+            <div className="flex gap-2">
+              <button 
+                onClick={() => handleOpenIndividualReport(student)}
+                className="px-3 py-2 bg-white border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-all shadow-sm"
+                title="Print Final Transcript"
+              >
+                <Printer size={18} />
+              </button>
+              <button 
+                onClick={() => handlePromote(student)}
+                className="px-4 py-2 bg-white border border-indigo-200 text-indigo-700 rounded-lg hover:bg-indigo-50 hover:border-indigo-300 transition-all font-medium flex items-center shadow-sm"
+              >
+                <UserPlus size={18} className="mr-2" /> Start New Program
+              </button>
+            </div>
           </div>
         ))}
 
@@ -878,6 +901,122 @@ export default function App() {
       </div>
     </div>
   );
+
+  const IndividualReportView = () => {
+    if (!reportStudent) return null;
+    
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="flex justify-between items-center no-print bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+          <button 
+            onClick={() => setActiveTab('students')}
+            className="flex items-center text-gray-600 hover:text-indigo-600 transition-colors"
+          >
+            <ArrowLeft size={18} className="mr-2" /> Back to List
+          </button>
+          <button 
+            onClick={triggerPrint} 
+            className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
+          >
+            <Printer size={18} className="mr-2" /> Print Official Report
+          </button>
+        </div>
+
+        <div id="printable-area" className="bg-white p-12 shadow-md border border-gray-200 rounded-none print:shadow-none print:border-none min-h-[1000px]">
+          {/* Header */}
+          <div className="text-center mb-10 border-b-2 border-gray-800 pb-6">
+            <h1 className="text-3xl font-bold text-gray-900 uppercase tracking-widest mb-2">McPherson University</h1>
+            <h2 className="text-xl font-bold text-indigo-900 uppercase">College of Computing</h2>
+            <div className="w-24 h-1 bg-indigo-900 mx-auto my-4"></div>
+            <h3 className="text-lg font-bold text-gray-700 uppercase tracking-wide">Individual Student Progress Report</h3>
+            <p className="text-sm text-gray-500 mt-1">{new Date().toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+          </div>
+
+          {/* Student Details Grid */}
+          <div className="grid grid-cols-2 gap-8 mb-10 text-sm">
+            <div className="space-y-4">
+              <div>
+                <p className="text-gray-500 uppercase text-xs font-semibold tracking-wider">Student Name</p>
+                <p className="text-lg font-bold text-gray-900">{reportStudent.name}</p>
+              </div>
+              <div>
+                <p className="text-gray-500 uppercase text-xs font-semibold tracking-wider">Registration Number</p>
+                <p className="text-lg font-medium text-gray-900">{reportStudent.regNumber}</p>
+              </div>
+              <div>
+                <p className="text-gray-500 uppercase text-xs font-semibold tracking-wider">Program</p>
+                <span className={`inline-block mt-1 px-3 py-1 rounded-full text-xs font-bold text-white ${PROGRAM_STRUCTURE[reportStudent.program]?.color}`}>
+                  {reportStudent.program}
+                </span>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <p className="text-gray-500 uppercase text-xs font-semibold tracking-wider">Supervisor</p>
+                <p className="text-lg font-medium text-gray-900">{reportStudent.supervisor}</p>
+              </div>
+              <div>
+                <p className="text-gray-500 uppercase text-xs font-semibold tracking-wider">Co-Supervisor</p>
+                <p className="text-lg font-medium text-gray-900">{reportStudent.coSupervisor || 'N/A'}</p>
+              </div>
+              <div>
+                <p className="text-gray-500 uppercase text-xs font-semibold tracking-wider">Duration in Program</p>
+                <p className="text-lg font-medium text-gray-900">{getDuration(reportStudent.joinedDate)}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Detailed Progress Table */}
+          <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 border-b pb-2">Academic Presentation History</h4>
+          <table className="w-full text-left text-sm mb-12 border-collapse">
+            <thead>
+              <tr className="bg-gray-50">
+                <th className="border p-3 font-bold text-gray-700">Presentation Stage</th>
+                <th className="border p-3 font-bold text-gray-700">Date</th>
+                <th className="border p-3 font-bold text-gray-700">Status</th>
+                <th className="border p-3 font-bold text-gray-700">Score</th>
+                <th className="border p-3 font-bold text-gray-700">Remarks</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(PROGRAM_STRUCTURE[reportStudent.program]?.stages || []).map(stage => {
+                const p = reportStudent.progress[stage.id];
+                return (
+                  <tr key={stage.id} className="">
+                    <td className="border p-3 font-medium">{stage.label}</td>
+                    <td className="border p-3">{p ? formatDate(p.date) : '-'}</td>
+                    <td className="border p-3">
+                      {p ? (
+                        <span className={`px-2 py-1 rounded text-xs font-bold ${p.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                          {p.status.toUpperCase()}
+                        </span>
+                      ) : <span className="text-gray-400">PENDING</span>}
+                    </td>
+                    <td className="border p-3 font-bold">{p?.score || '-'}</td>
+                    <td className="border p-3 text-gray-600 italic">{p?.remarks || '-'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          {/* Signature Section */}
+          <div className="mt-20 grid grid-cols-2 gap-12 pt-8 border-t border-gray-200">
+            <div className="text-center">
+              <div className="h-16 border-b border-gray-400 mb-2"></div>
+              <p className="font-bold text-gray-900">PG Coordinator</p>
+              <p className="text-xs text-gray-500">Signature & Date</p>
+            </div>
+            <div className="text-center">
+              <div className="h-16 border-b border-gray-400 mb-2"></div>
+              <p className="font-bold text-gray-900">Dean, College of Computing</p>
+              <p className="text-xs text-gray-500">Signature & Date</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   const SettingsView = () => (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -1005,18 +1144,17 @@ export default function App() {
 
       {/* Main Content */}
       <main className="md:ml-64 min-h-screen transition-all flex flex-col">
-        <div className="md:hidden bg-white p-4 flex items-center justify-between border-b border-gray-200 no-print">
-          <div className="font-bold text-lg">McU Postgrad</div><button className="p-2 bg-gray-100 rounded">Menu</button>
-        </div>
-        <div className="bg-gradient-to-r from-indigo-900 to-purple-800 text-white px-8 py-8 no-print shadow-md banner">
-          <div className="flex items-center gap-5">
-            <div className="bg-white/10 p-4 rounded-xl backdrop-blur-sm border border-white/20 shadow-inner"><GraduationCap size={40} className="text-white" /></div>
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight text-white">McPherson University</h1>
-              <p className="text-indigo-100 font-medium text-lg mt-1 opacity-90">College of Computing — Postgraduate Management Portal</p>
+        {activeTab !== 'individual_report' && (
+          <div className="bg-gradient-to-r from-indigo-900 to-purple-800 text-white px-8 py-8 no-print shadow-md banner">
+            <div className="flex items-center gap-5">
+              <div className="bg-white/10 p-4 rounded-xl backdrop-blur-sm border border-white/20 shadow-inner"><GraduationCap size={40} className="text-white" /></div>
+              <div>
+                <h1 className="text-3xl font-bold tracking-tight text-white">McPherson University</h1>
+                <p className="text-indigo-100 font-medium text-lg mt-1 opacity-90">College of Computing — Postgraduate Management Portal</p>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         <div className="p-4 sm:p-8 max-w-7xl mx-auto w-full flex-1">
           {activeTab === 'dashboard' && <DashboardView />}
@@ -1024,6 +1162,7 @@ export default function App() {
           {activeTab === 'alumni' && <AlumniView />}
           {activeTab === 'reports' && <ReportView />}
           {activeTab === 'settings' && <SettingsView />}
+          {activeTab === 'individual_report' && <IndividualReportView />}
         </div>
 
         <footer className="bg-white border-t border-gray-200 mt-auto no-print">
