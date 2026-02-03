@@ -945,9 +945,7 @@ export default function App() {
               </div>
               <div>
                 <p className="text-gray-500 uppercase text-xs font-semibold tracking-wider">Program</p>
-                <span className={`inline-block mt-1 px-3 py-1 rounded-full text-xs font-bold text-white ${PROGRAM_STRUCTURE[reportStudent.program]?.color}`}>
-                  {reportStudent.program}
-                </span>
+                <p className="text-lg font-bold text-gray-900">Computer Science ({reportStudent.program})</p>
               </div>
             </div>
             <div className="space-y-4">
