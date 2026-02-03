@@ -28,7 +28,6 @@ import {
   PieChart,
   Filter,
   UserCheck,
-  FileSpreadsheet,
   Clock3,
   Archive,
   UserPlus
@@ -213,8 +212,9 @@ export default function App() {
   const uniqueSupervisors = useMemo(() => {
     const sups = new Set();
     students.forEach(s => {
-      if(s.supervisor) sups.add(s.supervisor.trim());
-      if(s.coSupervisor) sups.add(s.coSupervisor.trim());
+      // Safe trim to prevent crashes on bad data
+      if(s.supervisor) sups.add(String(s.supervisor).trim());
+      if(s.coSupervisor) sups.add(String(s.coSupervisor).trim());
     });
     return ['All Supervisors', ...Array.from(sups).sort()];
   }, [students]);
@@ -224,8 +224,8 @@ export default function App() {
       const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
                             s.regNumber.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesSupervisor = selectedSupervisor === 'All Supervisors' || 
-                                (s.supervisor && s.supervisor.trim() === selectedSupervisor) || 
-                                (s.coSupervisor && s.coSupervisor.trim() === selectedSupervisor);
+                                (s.supervisor && String(s.supervisor).trim() === selectedSupervisor) || 
+                                (s.coSupervisor && String(s.coSupervisor).trim() === selectedSupervisor);
       return matchesSearch && matchesSupervisor;
     });
   }, [students, searchTerm, selectedSupervisor]);
@@ -631,97 +631,100 @@ export default function App() {
       </div>
 
       <div className="grid gap-4">
-        {activeStudents.map(student => (
-          <div key={student.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
-            <div className="p-4 sm:p-6 border-b border-gray-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <div className="flex items-center gap-4">
-                <div className={`h-12 w-12 rounded-lg flex items-center justify-center text-lg font-bold text-white shadow-sm
-                  ${PROGRAM_STRUCTURE[student.program]?.color || 'bg-gray-600'}`}>
-                  {student.program}
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900">{student.name}</h3>
-                  <div className="flex flex-wrap gap-2 text-sm text-gray-500">
-                    <span className="flex items-center"><FileText size={14} className="mr-1"/> {student.regNumber}</span>
-                    <span className="hidden sm:inline">•</span>
-                    <span className="flex items-center">
-                      <Users size={14} className="mr-1"/> 
-                      {student.supervisor}
-                      {student.coSupervisor && <span className="text-gray-400 ml-1 text-xs"> (& {student.coSupervisor})</span>}
-                    </span>
-                    {/* Duration Badge */}
-                    <span className="hidden sm:inline">•</span>
-                    <span className="flex items-center text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full text-xs font-medium">
-                      <Clock3 size={12} className="mr-1"/> 
-                      {getDuration(student.joinedDate)}
-                    </span>
+        {activeStudents.map(student => {
+          const programConfig = PROGRAM_STRUCTURE[student.program] || { stages: [], color: 'bg-gray-500' };
+          return (
+            <div key={student.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
+              <div className="p-4 sm:p-6 border-b border-gray-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div className="flex items-center gap-4">
+                  <div className={`h-12 w-12 rounded-lg flex items-center justify-center text-lg font-bold text-white shadow-sm
+                    ${programConfig.color}`}>
+                    {student.program}
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900">{student.name}</h3>
+                    <div className="flex flex-wrap gap-2 text-sm text-gray-500">
+                      <span className="flex items-center"><FileText size={14} className="mr-1"/> {student.regNumber}</span>
+                      <span className="hidden sm:inline">•</span>
+                      <span className="flex items-center">
+                        <Users size={14} className="mr-1"/> 
+                        {student.supervisor}
+                        {student.coSupervisor && <span className="text-gray-400 ml-1 text-xs"> (& {student.coSupervisor})</span>}
+                      </span>
+                      {/* Duration Badge */}
+                      <span className="hidden sm:inline">•</span>
+                      <span className="flex items-center text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full text-xs font-medium">
+                        <Clock3 size={12} className="mr-1"/> 
+                        {getDuration(student.joinedDate)}
+                      </span>
+                    </div>
                   </div>
                 </div>
+                <div className="flex gap-2 w-full sm:w-auto">
+                  <button onClick={() => openStudentModal(student)} className="flex-1 sm:flex-none px-3 py-2 text-sm font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200">
+                    Edit
+                  </button>
+                  <button onClick={() => handleDeleteStudent(student.id)} className="px-3 py-2 text-sm text-red-600 bg-red-50 hover:bg-red-100 rounded-lg border border-red-200">
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               </div>
-              <div className="flex gap-2 w-full sm:w-auto">
-                <button onClick={() => openStudentModal(student)} className="flex-1 sm:flex-none px-3 py-2 text-sm font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200">
-                  Edit
-                </button>
-                <button onClick={() => handleDeleteStudent(student.id)} className="px-3 py-2 text-sm text-red-600 bg-red-50 hover:bg-red-100 rounded-lg border border-red-200">
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            </div>
 
-            <div className="p-4 sm:p-6 bg-gray-50/50">
-              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Presentation Track</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {PROGRAM_STRUCTURE[student.program].stages.map((stage) => {
-                  const data = student.progress[stage.id];
-                  return (
-                    <div 
-                      key={stage.id} 
-                      onClick={() => openScheduleModal(student, stage.id)}
-                      className={`relative p-3 rounded-lg border cursor-pointer transition-all group
-                        ${data?.status === 'completed' ? 'bg-white border-green-200 hover:border-green-300' : 
-                          data?.status === 'scheduled' ? 'bg-white border-blue-200 hover:border-blue-300' : 
-                          'bg-gray-50 border-gray-200 border-dashed hover:border-gray-300 hover:bg-white'}`}
-                    >
-                      <div className="flex justify-between items-start mb-2">
-                        <span className="text-xs font-semibold text-gray-700 truncate max-w-[80%]">{stage.label}</span>
-                        {data?.status === 'completed' && <CheckCircle size={14} className="text-green-500" />}
-                        {data?.status === 'scheduled' && <Clock size={14} className="text-blue-500" />}
-                        {!data && <Plus size={14} className="text-gray-400 group-hover:text-indigo-500" />}
-                      </div>
-                      
-                      {data ? (
-                        <div className="text-xs">
-                          {data.status === 'scheduled' && (
-                            <div className="text-blue-600 font-medium">{formatDate(data.date)}</div>
-                          )}
-                          {data.status === 'completed' && (
-                            <div className="text-green-600 font-medium">Done: {formatDate(data.date)}</div>
-                          )}
-                          <div className="text-gray-400 mt-1 truncate">{data.venue || 'No venue'}</div>
+              <div className="p-4 sm:p-6 bg-gray-50/50">
+                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Presentation Track</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {programConfig.stages.map((stage) => {
+                    const data = student.progress[stage.id];
+                    return (
+                      <div 
+                        key={stage.id} 
+                        onClick={() => openScheduleModal(student, stage.id)}
+                        className={`relative p-3 rounded-lg border cursor-pointer transition-all group
+                          ${data?.status === 'completed' ? 'bg-white border-green-200 hover:border-green-300' : 
+                            data?.status === 'scheduled' ? 'bg-white border-blue-200 hover:border-blue-300' : 
+                            'bg-gray-50 border-gray-200 border-dashed hover:border-gray-300 hover:bg-white'}`}
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="text-xs font-semibold text-gray-700 truncate max-w-[80%]">{stage.label}</span>
+                          {data?.status === 'completed' && <CheckCircle size={14} className="text-green-500" />}
+                          {data?.status === 'scheduled' && <Clock size={14} className="text-blue-500" />}
+                          {!data && <Plus size={14} className="text-gray-400 group-hover:text-indigo-500" />}
                         </div>
-                      ) : (
-                        <div className="text-xs text-gray-400 italic py-1">Click to schedule</div>
-                      )}
+                        
+                        {data ? (
+                          <div className="text-xs">
+                            {data.status === 'scheduled' && (
+                              <div className="text-blue-600 font-medium">{formatDate(data.date)}</div>
+                            )}
+                            {data.status === 'completed' && (
+                              <div className="text-green-600 font-medium">Done: {formatDate(data.date)}</div>
+                            )}
+                            <div className="text-gray-400 mt-1 truncate">{data.venue || 'No venue'}</div>
+                          </div>
+                        ) : (
+                          <div className="text-xs text-gray-400 italic py-1">Click to schedule</div>
+                        )}
 
-                      {data?.docLink && (
-                        <a 
-                          href={data.docLink} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="absolute top-2 right-8 text-indigo-500 hover:bg-indigo-50 p-1 rounded-full transition-colors"
-                          title="Open Linked Document"
-                        >
-                          <Link size={14} />
-                        </a>
-                      )}
-                    </div>
-                  );
-                })}
+                        {data?.docLink && (
+                          <a 
+                            href={data.docLink} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="absolute top-2 right-8 text-indigo-500 hover:bg-indigo-50 p-1 rounded-full transition-colors"
+                            title="Open Linked Document"
+                          >
+                            <Link size={14} />
+                          </a>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         {activeStudents.length === 0 && (
           <div className="text-center py-12 bg-gray-50 rounded-xl border border-dashed border-gray-200">
@@ -775,6 +778,184 @@ export default function App() {
             <p className="text-gray-500">Students marked as "Graduated" will appear here.</p>
           </div>
         )}
+      </div>
+    </div>
+  );
+
+  const ReportView = () => (
+    <div className="space-y-6">
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between items-center gap-4 no-print">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">Generate Reports</h2>
+          <p className="text-gray-500">Export student data. Use the filter below to refine the report.</p>
+          <div className="mt-4">
+             <SupervisorFilter />
+          </div>
+        </div>
+        <div className="flex gap-3">
+          <button onClick={exportToCSV} className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-sm">
+            <Download size={18} className="mr-2" /> Export Excel (CSV)
+          </button>
+          <button onClick={triggerPrint} className="flex items-center px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900 transition-colors shadow-sm">
+            <Printer size={18} className="mr-2" /> Print / Save PDF
+          </button>
+        </div>
+      </div>
+
+      <div id="printable-area" className="bg-white p-8 shadow-sm border border-gray-200 rounded-xl">
+        <div className="text-center mb-8 border-b border-gray-200 pb-6">
+          <h1 className="text-3xl font-bold text-gray-900 uppercase tracking-wide">McPherson University</h1>
+          <h2 className="text-xl font-bold text-indigo-900 uppercase mt-2">College of Computing</h2>
+          <div className="w-24 h-1 bg-indigo-900 mx-auto my-4"></div>
+          <h3 className="text-lg text-gray-600 font-medium uppercase tracking-widest">Postgraduate Student Progress Report</h3>
+          
+          {selectedSupervisor !== 'All Supervisors' && (
+             <p className="text-sm font-bold text-indigo-700 mt-2 bg-indigo-50 inline-block px-3 py-1 rounded-full border border-indigo-100">
+               Supervisor: {selectedSupervisor}
+             </p>
+          )}
+          
+          <p className="text-sm text-gray-400 mt-2">Generated on {new Date().toLocaleDateString()}</p>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead>
+              <tr className="border-b-2 border-gray-800">
+                <th className="py-3 px-2 font-bold uppercase">Reg. Number</th>
+                <th className="py-3 px-2 font-bold uppercase">Name</th>
+                <th className="py-3 px-2 font-bold uppercase">Program</th>
+                <th className="py-3 px-2 font-bold uppercase">Supervisor</th>
+                <th className="py-3 px-2 font-bold uppercase">Status</th>
+                <th className="py-3 px-2 font-bold uppercase text-right">Progress</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {filteredStudents.map((s) => (
+                <React.Fragment key={s.id}>
+                  <tr className="bg-gray-50/50">
+                    <td className="py-3 px-2 font-medium">{s.regNumber}</td>
+                    <td className="py-3 px-2 font-bold">{s.name}</td>
+                    <td className="py-3 px-2">{s.program}</td>
+                    <td className="py-3 px-2">
+                      <div>{s.supervisor}</div>
+                      {s.coSupervisor && <div className="text-xs text-gray-500">Co: {s.coSupervisor}</div>}
+                    </td>
+                    <td className="py-3 px-2"><span className="px-2 py-1 bg-gray-200 rounded text-xs">{s.status}</span></td>
+                    <td className="py-3 px-2 text-right font-bold">{calculateProgress(s)}%</td>
+                  </tr>
+                  {/* Detailed Progress Row for Print */}
+                  <tr className="print:table-row hidden">
+                    <td colSpan="6" className="py-2 px-4 pb-4">
+                      <div className="grid grid-cols-4 gap-2 text-xs text-gray-500">
+                        {/* SAFE ACCESS to stages */}
+                        {(PROGRAM_STRUCTURE[s.program]?.stages || []).map(stage => {
+                          const p = s.progress[stage.id];
+                          return (
+                            <div key={stage.id} className="border p-1 rounded">
+                              <strong>{stage.label}:</strong> {p ? `${p.status.toUpperCase()} (${formatDate(p.date)})` : 'Pending'}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </td>
+                  </tr>
+                </React.Fragment>
+              ))}
+              {filteredStudents.length === 0 && (
+                <tr>
+                  <td colSpan="6" className="text-center py-8 text-gray-400">No students found.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        
+        <div className="mt-12 pt-8 border-t border-gray-200 flex justify-between text-sm text-gray-500">
+          <div>Dean, College of Computing</div>
+          <div>PG Coordinator</div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const SettingsView = () => (
+    <div className="space-y-6 animate-in fade-in duration-500">
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <h2 className="text-xl font-bold text-gray-800 mb-2">System Settings & Data Management</h2>
+        <p className="text-gray-500">Manage your application data locally. Ensure you backup regularly.</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* Backup Card */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between h-full">
+          <div>
+            <div className="w-12 h-12 bg-indigo-50 rounded-lg flex items-center justify-center text-indigo-600 mb-4">
+              <Save size={24} />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Backup Data</h3>
+            <p className="text-gray-500 text-sm mb-6">
+              Download a complete copy of your student database as a JSON file. 
+              Save this file to your computer or cloud storage to prevent data loss.
+            </p>
+          </div>
+          <button 
+            onClick={handleExportData}
+            className="w-full py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium flex items-center justify-center gap-2"
+          >
+            <Download size={18} /> Download Backup
+          </button>
+        </div>
+
+        {/* Restore Card */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between h-full">
+          <div>
+            <div className="w-12 h-12 bg-amber-50 rounded-lg flex items-center justify-center text-amber-600 mb-4">
+              <Upload size={24} />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Restore Data</h3>
+            <p className="text-gray-500 text-sm mb-6">
+              Upload a previously saved backup file to restore your student records.
+              <span className="block mt-2 text-red-500 font-medium text-xs bg-red-50 p-2 rounded">
+                Warning: This will overwrite your current data.
+              </span>
+            </p>
+          </div>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleImportFile} 
+            accept=".json" 
+            className="hidden" 
+          />
+          <button 
+            onClick={handleImportClick}
+            className="w-full py-3 bg-white border-2 border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-all font-medium flex items-center justify-center gap-2"
+          >
+            <Upload size={18} /> Restore from File
+          </button>
+        </div>
+
+        {/* Bulk Import Card - Changed icon from FileSpreadsheet to FileText to fix crash */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between h-full">
+          <div>
+            <div className="w-12 h-12 bg-emerald-50 rounded-lg flex items-center justify-center text-emerald-600 mb-4">
+              <FileText size={24} />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">Bulk Import (CSV)</h3>
+            <p className="text-gray-500 text-sm mb-6">
+              Import multiple students from an Excel/CSV file. 
+              <span className="text-emerald-600 cursor-pointer underline ml-1" onClick={handleDownloadTemplate}>Download Template</span>
+            </p>
+          </div>
+          <input type="file" ref={csvInputRef} onChange={handleBulkCSVUpload} accept=".csv" className="hidden" />
+          <button 
+            onClick={handleCSVUploadClick}
+            className="w-full py-3 bg-white border-2 border-emerald-200 text-emerald-700 rounded-lg hover:bg-emerald-50 transition-all font-medium flex items-center justify-center gap-2"
+          >
+            <Upload size={18} /> Import Students
+          </button>
+        </div>
       </div>
     </div>
   );
