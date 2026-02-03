@@ -22,7 +22,8 @@ import {
   Save,
   Upload,
   ExternalLink,
-  Bell
+  Bell,
+  Link
 } from 'lucide-react';
 
 /**
@@ -71,7 +72,7 @@ const INITIAL_STUDENTS = [
     status: 'Active',
     joinedDate: '2023-01-15',
     progress: {
-      proposal: { status: 'completed', date: '2023-06-10', score: 'A', remarks: 'Excellent work' },
+      proposal: { status: 'completed', date: '2023-06-10', score: 'A', remarks: 'Excellent work', docLink: 'https://google.com' },
       predata: { status: 'scheduled', date: '2024-03-20', venue: 'Hall 3' }
     }
   },
@@ -134,7 +135,7 @@ export default function App() {
   });
   
   const [scheduleForm, setScheduleForm] = useState({
-    date: '', time: '', venue: '', status: 'scheduled', score: '', remarks: ''
+    date: '', time: '', venue: '', status: 'scheduled', score: '', remarks: '', docLink: ''
   });
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -281,7 +282,7 @@ export default function App() {
 
   const resetForms = () => {
     setStudentForm({ name: '', regNumber: '', program: 'PhD', supervisor: '', joinedDate: '' });
-    setScheduleForm({ date: '', time: '', venue: '', status: 'scheduled', score: '', remarks: '' });
+    setScheduleForm({ date: '', time: '', venue: '', status: 'scheduled', score: '', remarks: '', docLink: '' });
     setSelectedStudent(null);
     setSelectedStageId(null);
   };
@@ -293,7 +294,7 @@ export default function App() {
     if (existingData) {
       setScheduleForm(existingData);
     } else {
-      setScheduleForm({ date: '', time: '', venue: '', status: 'scheduled', score: '', remarks: '' });
+      setScheduleForm({ date: '', time: '', venue: '', status: 'scheduled', score: '', remarks: '', docLink: '' });
     }
     setIsScheduleModalOpen(true);
   };
@@ -488,6 +489,20 @@ export default function App() {
                         </div>
                       ) : (
                         <div className="text-xs text-gray-400 italic py-1">Click to schedule</div>
+                      )}
+
+                      {/* Document Link Icon - Quick Access */}
+                      {data?.docLink && (
+                        <a 
+                          href={data.docLink} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="absolute top-2 right-8 text-indigo-500 hover:bg-indigo-50 p-1 rounded-full transition-colors"
+                          title="Open Linked Document"
+                        >
+                          <Link size={14} />
+                        </a>
                       )}
                     </div>
                   );
@@ -878,6 +893,23 @@ export default function App() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
                   <input type="time" className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" 
                     value={scheduleForm.time} onChange={e => setScheduleForm({...scheduleForm, time: e.target.value})} />
+                </div>
+              </div>
+
+              {/* Document Link Input */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Document Link (Google Drive / Dropbox)</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Link size={16} className="text-gray-400" />
+                  </div>
+                  <input 
+                    type="url" 
+                    placeholder="https://docs.google.com/..." 
+                    className="w-full pl-10 p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" 
+                    value={scheduleForm.docLink} 
+                    onChange={e => setScheduleForm({...scheduleForm, docLink: e.target.value})} 
+                  />
                 </div>
               </div>
               
