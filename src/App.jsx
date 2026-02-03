@@ -29,7 +29,9 @@ import {
   Filter,
   UserCheck,
   FileSpreadsheet,
-  Clock3
+  Clock3,
+  Archive,
+  UserPlus
 } from 'lucide-react';
 
 /**
@@ -228,24 +230,30 @@ export default function App() {
     });
   }, [students, searchTerm, selectedSupervisor]);
 
+  // Derived subsets for views
+  const activeStudents = useMemo(() => filteredStudents.filter(s => s.status !== 'Alumni'), [filteredStudents]);
+  const alumniStudents = useMemo(() => filteredStudents.filter(s => s.status === 'Alumni'), [filteredStudents]);
+
   const stats = useMemo(() => {
-    const sourceData = filteredStudents;
+    // Stats primarily focus on ACTIVE students
+    const sourceData = students.filter(s => s.status !== 'Alumni'); 
     return {
       total: sourceData.length,
       phd: sourceData.filter(s => s.program === 'PhD').length,
       msc: sourceData.filter(s => s.program === 'MSc').length,
-      active: sourceData.filter(s => s.status === 'Active').length,
+      alumni: students.filter(s => s.status === 'Alumni').length,
       upcoming: sourceData.reduce((acc, curr) => {
         const hasUpcoming = Object.values(curr.progress).some(p => p.status === 'scheduled');
         return hasUpcoming ? acc + 1 : acc;
       }, 0)
     };
-  }, [filteredStudents]);
+  }, [students]);
 
   const analyticsData = useMemo(() => {
+    const source = activeStudents;
     const programs = ['PhD', 'MSc', 'MPhil', 'PGD'].map(prog => ({
       label: prog,
-      value: filteredStudents.filter(s => s.program === prog).length,
+      value: source.filter(s => s.program === prog).length,
       color: PROGRAM_STRUCTURE[prog]?.color?.replace('bg-', '') || 'gray-400' 
     })).filter(d => d.value > 0);
     const colorMap = { 'PhD': '#9333ea', 'MSc': '#3b82f6', 'MPhil': '#06b6d4', 'PGD': '#10b981' };
@@ -258,18 +266,20 @@ export default function App() {
       { id: 'viva', label: 'Viva Voce' }
     ];
     const pipelineData = stages.map(stage => {
-      const count = filteredStudents.filter(s => s.progress[stage.id]?.status === 'completed').length;
+      const count = source.filter(s => s.progress[stage.id]?.status === 'completed').length;
       return { label: stage.label, value: count, color: 'bg-indigo-500' };
     });
     return { donutData, pipelineData };
-  }, [filteredStudents]);
+  }, [activeStudents]);
 
   // Actions
   const handleAddStudent = (e) => {
     e.preventDefault();
-    if (selectedStudent) {
+    if (selectedStudent && selectedStudent.id) {
+      // Edit mode logic
       setStudents(prev => prev.map(s => s.id === selectedStudent.id ? { ...s, ...studentForm } : s));
     } else {
+      // Add mode logic
       setStudents(prev => [...prev, { ...studentForm, id: generateId(), progress: {}, status: 'Active' }]);
     }
     setIsStudentModalOpen(false);
@@ -277,9 +287,32 @@ export default function App() {
   };
 
   const handleDeleteStudent = (id) => {
-    if (confirm('Are you sure you want to delete this student record?')) {
+    if (confirm('Are you sure you want to delete this student record? This cannot be undone.')) {
       setStudents(prev => prev.filter(s => s.id !== id));
     }
+  };
+
+  const handleGraduate = (student) => {
+    if(confirm(`Are you sure you want to graduate ${student.name}? They will be moved to the Alumni archive.`)) {
+      setStudents(prev => prev.map(s => s.id === student.id ? { ...s, status: 'Alumni', graduationDate: new Date().toISOString().split('T')[0] } : s));
+      setIsScheduleModalOpen(false);
+      alert(`${student.name} has been successfully graduated!`);
+    }
+  };
+
+  const handlePromote = (alumnus) => {
+    // Open add modal pre-filled with alumni details but clean program data
+    setSelectedStudent(null); // Clear selected student ID to treat as NEW entry
+    setStudentForm({
+      name: alumnus.name,
+      regNumber: '', // Likely needs new reg number
+      email: alumnus.email,
+      program: 'MSc', // Default next step recommendation?
+      supervisor: '',
+      coSupervisor: '',
+      joinedDate: new Date().toISOString().split('T')[0]
+    });
+    setIsStudentModalOpen(true);
   };
 
   const handleScheduleSave = (e) => {
@@ -362,7 +395,7 @@ export default function App() {
       for(let i = 1; i < lines.length; i++) {
         const line = lines[i].trim();
         if(!line) continue;
-        const parts = line.split(','); // Simple split
+        const parts = line.split(','); 
         if(parts.length < 4) continue; 
 
         const [name, regNumber, email, program, supervisor, coSupervisor, joinedDate] = parts;
@@ -469,16 +502,20 @@ export default function App() {
   };
 
   const exportToCSV = () => {
+    // Export ALL students or filtered view? Let's use filtered view which might include Alumni if tab is Alumni
     let csvContent = "data:text/csv;charset=utf-8,";
     csvContent += "Name,Reg Number,Email,Program,Supervisor,Co-Supervisor,Status,Progress %\n";
-    filteredStudents.forEach(s => {
+    // Depending on tab, filteredStudents is either Active or Alumni
+    const listToExport = activeTab === 'alumni' ? alumniStudents : activeStudents;
+    
+    listToExport.forEach(s => {
       const row = `${s.name},${s.regNumber},${s.email || ''},${s.program},${s.supervisor},${s.coSupervisor || ''},${s.status},${calculateProgress(s)}%`;
       csvContent += row + "\n";
     });
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "postgrad_students_report.csv");
+    link.setAttribute("download", `mcu_students_${activeTab}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -512,9 +549,9 @@ export default function App() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Total Students', val: stats.total, icon: Users, color: 'bg-indigo-600' },
+          { label: 'Active Students', val: stats.total, icon: Users, color: 'bg-indigo-600' },
           { label: 'PhD Candidates', val: stats.phd, icon: GraduationCap, color: 'bg-purple-600' },
-          { label: 'MSc/MPhil', val: stats.msc, icon: FileText, color: 'bg-cyan-600' },
+          { label: 'Total Alumni', val: stats.alumni, icon: Archive, color: 'bg-gray-600' },
           { label: 'Upcoming Events', val: stats.upcoming, icon: Calendar, color: 'bg-amber-600' },
         ].map((stat, idx) => (
           <div key={idx} className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 flex items-center justify-between hover:shadow-md transition-shadow">
@@ -561,64 +598,6 @@ export default function App() {
           </div>
         </div>
       </div>
-
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="p-6 border-b border-gray-100 flex justify-between items-center">
-          <h2 className="text-lg font-bold text-gray-800">Recent Activity & Status</h2>
-          <button onClick={() => setActiveTab('students')} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1">
-            View All <ChevronRight size={14} />
-          </button>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Student</th>
-                <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Program</th>
-                <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Progress</th>
-                <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Supervisors</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {filteredStudents.slice(0, 5).map(s => (
-                <tr key={s.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center">
-                      <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold text-gray-600 mr-3">
-                        {s.name.charAt(0)}
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">{s.name}</div>
-                        <div className="text-xs text-gray-500">{s.regNumber}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">
-                    <span className={`px-2 py-1 rounded text-xs font-medium text-white ${PROGRAM_STRUCTURE[s.program]?.color || 'bg-gray-500'}`}>
-                      {s.program}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="w-full bg-gray-200 rounded-full h-2 max-w-[100px]">
-                      <div className="bg-indigo-600 h-2 rounded-full" style={{ width: `${calculateProgress(s)}%` }}></div>
-                    </div>
-                    <span className="text-xs text-gray-500 mt-1 block">{calculateProgress(s)}% Complete</span>
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-600">
-                    <div>{s.supervisor}</div>
-                    {s.coSupervisor && <div className="text-xs text-gray-400 mt-1">Co: {s.coSupervisor}</div>}
-                  </td>
-                </tr>
-              ))}
-              {filteredStudents.length === 0 && (
-                <tr>
-                  <td colSpan="4" className="text-center py-8 text-gray-400">No students found matching current filters.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
     </div>
   );
 
@@ -630,7 +609,7 @@ export default function App() {
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
             <input 
               type="text" 
-              placeholder="Search students..." 
+              placeholder="Search active students..." 
               className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -642,9 +621,6 @@ export default function App() {
         </div>
         
         <div className="flex gap-2 w-full md:w-auto">
-          <div className="md:hidden flex-1">
-             <SupervisorFilter />
-          </div>
           <button 
             onClick={() => openStudentModal()}
             className="flex-shrink-0 flex items-center justify-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
@@ -655,7 +631,7 @@ export default function App() {
       </div>
 
       <div className="grid gap-4">
-        {filteredStudents.map(student => (
+        {activeStudents.map(student => (
           <div key={student.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
             <div className="p-4 sm:p-6 border-b border-gray-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               <div className="flex items-center gap-4">
@@ -747,10 +723,10 @@ export default function App() {
           </div>
         ))}
 
-        {filteredStudents.length === 0 && (
+        {activeStudents.length === 0 && (
           <div className="text-center py-12 bg-gray-50 rounded-xl border border-dashed border-gray-200">
             <Users size={48} className="mx-auto text-gray-300 mb-4" />
-            <h3 className="text-lg font-medium text-gray-900">No students found</h3>
+            <h3 className="text-lg font-medium text-gray-900">No active students found</h3>
             <p className="text-gray-500">Try adjusting your filters or search.</p>
           </div>
         )}
@@ -758,169 +734,47 @@ export default function App() {
     </div>
   );
 
-  const ReportView = () => (
-    <div className="space-y-6">
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between items-center gap-4 no-print">
-        <div>
-          <h2 className="text-xl font-bold text-gray-800">Generate Reports</h2>
-          <p className="text-gray-500">Export student data. Use the filter below to refine the report.</p>
-          <div className="mt-4">
-             <SupervisorFilter />
-          </div>
-        </div>
-        <div className="flex gap-3">
-          <button onClick={exportToCSV} className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-sm">
-            <Download size={18} className="mr-2" /> Export Excel (CSV)
-          </button>
-          <button onClick={triggerPrint} className="flex items-center px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900 transition-colors shadow-sm">
-            <Printer size={18} className="mr-2" /> Print / Save PDF
-          </button>
-        </div>
+  const AlumniView = () => (
+    <div className="space-y-4">
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-4">
+        <h2 className="text-xl font-bold text-gray-800">Alumni Archive</h2>
+        <p className="text-gray-500">View graduated students or promote them to new programs.</p>
       </div>
 
-      <div id="printable-area" className="bg-white p-8 shadow-sm border border-gray-200 rounded-xl">
-        <div className="text-center mb-8 border-b border-gray-200 pb-6">
-          <h1 className="text-3xl font-bold text-gray-900 uppercase tracking-wide">McPherson University</h1>
-          <h2 className="text-xl font-bold text-indigo-900 uppercase mt-2">College of Computing</h2>
-          <div className="w-24 h-1 bg-indigo-900 mx-auto my-4"></div>
-          <h3 className="text-lg text-gray-600 font-medium uppercase tracking-widest">Postgraduate Student Progress Report</h3>
-          
-          {selectedSupervisor !== 'All Supervisors' && (
-             <p className="text-sm font-bold text-indigo-700 mt-2 bg-indigo-50 inline-block px-3 py-1 rounded-full border border-indigo-100">
-               Supervisor: {selectedSupervisor}
-             </p>
-          )}
-          
-          <p className="text-sm text-gray-400 mt-2">Generated on {new Date().toLocaleDateString()}</p>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead>
-              <tr className="border-b-2 border-gray-800">
-                <th className="py-3 px-2 font-bold uppercase">Reg. Number</th>
-                <th className="py-3 px-2 font-bold uppercase">Name</th>
-                <th className="py-3 px-2 font-bold uppercase">Program</th>
-                <th className="py-3 px-2 font-bold uppercase">Supervisor</th>
-                <th className="py-3 px-2 font-bold uppercase">Status</th>
-                <th className="py-3 px-2 font-bold uppercase text-right">Progress</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {filteredStudents.map((s) => (
-                <React.Fragment key={s.id}>
-                  <tr className="bg-gray-50/50">
-                    <td className="py-3 px-2 font-medium">{s.regNumber}</td>
-                    <td className="py-3 px-2 font-bold">{s.name}</td>
-                    <td className="py-3 px-2">{s.program}</td>
-                    <td className="py-3 px-2">
-                      <div>{s.supervisor}</div>
-                      {s.coSupervisor && <div className="text-xs text-gray-500">Co: {s.coSupervisor}</div>}
-                    </td>
-                    <td className="py-3 px-2"><span className="px-2 py-1 bg-gray-200 rounded text-xs">{s.status}</span></td>
-                    <td className="py-3 px-2 text-right font-bold">{calculateProgress(s)}%</td>
-                  </tr>
-                  {/* Detailed Progress Row for Print */}
-                  <tr className="print:table-row hidden">
-                    <td colSpan="6" className="py-2 px-4 pb-4">
-                      <div className="grid grid-cols-4 gap-2 text-xs text-gray-500">
-                        {PROGRAM_STRUCTURE[s.program].stages.map(stage => {
-                          const p = s.progress[stage.id];
-                          return (
-                            <div key={stage.id} className="border p-1 rounded">
-                              <strong>{stage.label}:</strong> {p ? `${p.status.toUpperCase()} (${formatDate(p.date)})` : 'Pending'}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </td>
-                  </tr>
-                </React.Fragment>
-              ))}
-              {filteredStudents.length === 0 && (
-                <tr>
-                  <td colSpan="6" className="text-center py-8 text-gray-400">No students found.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-        
-        <div className="mt-12 pt-8 border-t border-gray-200 flex justify-between text-sm text-gray-500">
-          <div>Dean, College of Computing</div>
-          <div>PG Coordinator</div>
-        </div>
-      </div>
-    </div>
-  );
-
-  const SettingsView = () => (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-        <h2 className="text-xl font-bold text-gray-800 mb-2">System Settings & Data Management</h2>
-        <p className="text-gray-500">Manage your application data locally. Ensure you backup regularly.</p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* Backup Card */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between h-full">
-          <div>
-            <div className="w-12 h-12 bg-indigo-50 rounded-lg flex items-center justify-center text-indigo-600 mb-4">
-              <Save size={24} />
+      <div className="grid gap-4">
+        {alumniStudents.map(student => (
+          <div key={student.id} className="bg-gray-50 rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col md:flex-row justify-between items-center opacity-90 hover:opacity-100 transition-opacity">
+            <div className="flex items-center gap-4 mb-4 md:mb-0">
+              <div className="h-12 w-12 bg-gray-300 rounded-lg flex items-center justify-center text-gray-600">
+                <GraduationCap size={24} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  {student.name}
+                  <span className="px-2 py-0.5 bg-gray-200 text-gray-600 text-xs rounded-full">Alumni</span>
+                </h3>
+                <div className="text-sm text-gray-500">
+                  {student.program} • {student.regNumber} • Graduated: {formatDate(student.graduationDate)}
+                </div>
+              </div>
             </div>
-            <h3 className="text-lg font-bold text-gray-900 mb-2">Backup Data</h3>
-            <p className="text-gray-500 text-sm mb-6">
-              Download a complete copy of your student database as a JSON file.
-            </p>
+            
+            <button 
+              onClick={() => handlePromote(student)}
+              className="px-4 py-2 bg-white border border-indigo-200 text-indigo-700 rounded-lg hover:bg-indigo-50 hover:border-indigo-300 transition-all font-medium flex items-center shadow-sm"
+            >
+              <UserPlus size={18} className="mr-2" /> Start New Program
+            </button>
           </div>
-          <button 
-            onClick={handleExportData}
-            className="w-full py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium flex items-center justify-center gap-2"
-          >
-            <Download size={18} /> Download Backup
-          </button>
-        </div>
+        ))}
 
-        {/* Restore Card */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between h-full">
-          <div>
-            <div className="w-12 h-12 bg-amber-50 rounded-lg flex items-center justify-center text-amber-600 mb-4">
-              <Upload size={24} />
-            </div>
-            <h3 className="text-lg font-bold text-gray-900 mb-2">Restore Data</h3>
-            <p className="text-gray-500 text-sm mb-6">
-              Upload a previously saved backup file to restore records.
-            </p>
+        {alumniStudents.length === 0 && (
+          <div className="text-center py-12 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+            <Archive size={48} className="mx-auto text-gray-300 mb-4" />
+            <h3 className="text-lg font-medium text-gray-900">No Alumni Records</h3>
+            <p className="text-gray-500">Students marked as "Graduated" will appear here.</p>
           </div>
-          <input type="file" ref={fileInputRef} onChange={handleImportFile} accept=".json" className="hidden" />
-          <button 
-            onClick={handleImportClick}
-            className="w-full py-3 bg-white border-2 border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-all font-medium flex items-center justify-center gap-2"
-          >
-            <Upload size={18} /> Restore from File
-          </button>
-        </div>
-
-        {/* Bulk Import Card */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between h-full">
-          <div>
-            <div className="w-12 h-12 bg-emerald-50 rounded-lg flex items-center justify-center text-emerald-600 mb-4">
-              <FileSpreadsheet size={24} />
-            </div>
-            <h3 className="text-lg font-bold text-gray-900 mb-2">Bulk Import (CSV)</h3>
-            <p className="text-gray-500 text-sm mb-6">
-              Import multiple students from an Excel/CSV file. 
-              <span className="text-emerald-600 cursor-pointer underline ml-1" onClick={handleDownloadTemplate}>Download Template</span>
-            </p>
-          </div>
-          <input type="file" ref={csvInputRef} onChange={handleBulkCSVUpload} accept=".csv" className="hidden" />
-          <button 
-            onClick={handleCSVUploadClick}
-            className="w-full py-3 bg-white border-2 border-emerald-200 text-emerald-700 rounded-lg hover:bg-emerald-50 transition-all font-medium flex items-center justify-center gap-2"
-          >
-            <FileSpreadsheet size={18} /> Import Students
-          </button>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -946,7 +800,13 @@ export default function App() {
             <h1 className="text-xl font-bold text-gray-900 tracking-tight">McU Postgrad</h1>
           </div>
           <nav className="flex-1 p-4 space-y-2">
-            {[{ id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' }, { id: 'students', icon: Users, label: 'Students' }, { id: 'reports', icon: FileText, label: 'Reports' }, { id: 'settings', icon: Settings, label: 'Settings' }].map((item) => (
+            {[
+              { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' }, 
+              { id: 'students', icon: Users, label: 'Students' }, 
+              { id: 'alumni', icon: Archive, label: 'Alumni / History' },
+              { id: 'reports', icon: FileText, label: 'Reports' }, 
+              { id: 'settings', icon: Settings, label: 'Settings' }
+            ].map((item) => (
               <button key={item.id} onClick={() => setActiveTab(item.id)} className={`w-full flex items-center px-4 py-3 rounded-xl transition-all duration-200 ${activeTab === item.id ? 'bg-indigo-50 text-indigo-700 font-semibold shadow-sm' : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'}`}>
                 <item.icon size={20} className="mr-3" />{item.label}
               </button>
@@ -980,6 +840,7 @@ export default function App() {
         <div className="p-4 sm:p-8 max-w-7xl mx-auto w-full flex-1">
           {activeTab === 'dashboard' && <DashboardView />}
           {activeTab === 'students' && <StudentsView />}
+          {activeTab === 'alumni' && <AlumniView />}
           {activeTab === 'reports' && <ReportView />}
           {activeTab === 'settings' && <SettingsView />}
         </div>
@@ -1072,9 +933,20 @@ export default function App() {
                   <div><label className="block text-sm font-medium text-green-800 mb-1">Remarks</label><textarea rows="2" className="w-full p-2 border border-green-200 rounded-lg focus:ring-2 focus:ring-green-500 outline-none bg-white" value={scheduleForm.remarks} onChange={e => setScheduleForm({...scheduleForm, remarks: e.target.value})}></textarea></div>
                 </div>
               )}
-              <div className="pt-4 flex justify-end gap-3">
-                <button type="button" onClick={() => setIsScheduleModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
-                <button type="submit" className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium">{scheduleForm.status === 'scheduled' ? 'Book Schedule' : 'Update Record'}</button>
+              <div className="pt-4 flex justify-between gap-3">
+                {/* Graduate Button - Only show for final stage of program if completed */}
+                {selectedStudent && 
+                 selectedStageId === PROGRAM_STRUCTURE[selectedStudent.program].stages[PROGRAM_STRUCTURE[selectedStudent.program].stages.length - 1].id &&
+                 scheduleForm.status === 'completed' ? (
+                   <button type="button" onClick={() => handleGraduate(selectedStudent)} className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium flex items-center shadow-sm">
+                     <GraduationCap size={18} className="mr-2" /> Graduate Student
+                   </button>
+                 ) : <div></div>}
+                
+                <div className="flex gap-3">
+                  <button type="button" onClick={() => setIsScheduleModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg">Cancel</button>
+                  <button type="submit" className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium">{scheduleForm.status === 'scheduled' ? 'Book Schedule' : 'Update Record'}</button>
+                </div>
               </div>
             </form>
           </div>
