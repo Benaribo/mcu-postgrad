@@ -64,7 +64,6 @@ const INITIAL_STAFF = [
  * HELPER FUNCTIONS (Safe Versions)
  */
 const generateId = () => Math.random().toString(36).substr(2, 9);
-
 const formatDate = (dateString) => {
   if (!dateString) return '-';
   try {
@@ -72,7 +71,6 @@ const formatDate = (dateString) => {
     return isNaN(d.getTime()) ? '-' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   } catch (e) { return '-'; }
 };
-
 const getDuration = (dateString) => {
   if (!dateString) return '';
   try {
@@ -80,7 +78,6 @@ const getDuration = (dateString) => {
     return isNaN(diff) ? '' : `${(diff / (1000 * 60 * 60 * 24 * 365)).toFixed(1)} yrs`;
   } catch(e) { return ''; }
 };
-
 const getDurationStats = (dateString, program) => {
   if (!dateString) return { text: '', status: 'neutral' };
   try {
@@ -91,10 +88,9 @@ const getDurationStats = (dateString, program) => {
     let status = 'good';
     if (diffMonths > limit) status = 'critical';
     else if (diffMonths > limit - 6) status = 'warning';
-    return { text: `${(diffMonths / 12).toFixed(1)} yrs`, status };
+    return { text: `${(diffMonths / 12).toFixed(1)} yrs`, status, rawMonths: diffMonths };
   } catch(e) { return { text: '', status: 'neutral' }; }
 };
-
 const calculateProgress = (student) => {
   if (!student) return 0;
   const struct = PROGRAM_STRUCTURE[student.program] || DEFAULT_STRUCTURE;
@@ -111,6 +107,7 @@ const SimpleBarChart = ({ data, color }) => {
       {data.map((d, i) => (
         <div key={i} className="flex-1 flex flex-col items-center group">
           <div className="relative w-full flex justify-center">
+            <span className="absolute -top-6 text-xs font-bold text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity">{d.value}</span>
             <div className={`w-full max-w-[40px] rounded-t-md transition-all duration-500 hover:opacity-80 ${d.color || color}`} style={{ height: `${(d.value / max) * 100}px`, minHeight: '4px' }}></div>
           </div>
           <span className="text-[10px] text-gray-500 mt-2 font-medium truncate w-full text-center">{d.label}</span>
@@ -429,12 +426,14 @@ export default function App() {
 
   const FiltersBar = () => (
     <div className="flex flex-col sm:flex-row gap-2">
-      <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm">
-        <Filter size={16} className="text-gray-400" />
-        <select value={selectedSupervisor} onChange={(e) => setSelectedSupervisor(e.target.value)} className="bg-transparent text-sm text-gray-700 outline-none cursor-pointer w-full sm:w-auto">
-          {uniqueSupervisors.map(sup => (<option key={sup} value={sup}>{sup}</option>))}
-        </select>
-      </div>
+      {currentUser?.role === 'admin' && (
+        <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm">
+          <Filter size={16} className="text-gray-400" />
+          <select value={selectedSupervisor} onChange={(e) => setSelectedSupervisor(e.target.value)} className="bg-transparent text-sm text-gray-700 outline-none cursor-pointer w-full sm:w-auto">
+            {uniqueSupervisors.map(sup => (<option key={sup} value={sup}>{sup}</option>))}
+          </select>
+        </div>
+      )}
       <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm">
         <GraduationCap size={16} className="text-gray-400" />
         <select value={selectedProgram} onChange={(e) => setSelectedProgram(e.target.value)} className="bg-transparent text-sm text-gray-700 outline-none cursor-pointer w-full sm:w-auto">
@@ -592,7 +591,7 @@ export default function App() {
                 <React.Fragment key={s.id}>
                   <tr className="bg-gray-50/50"><td className="py-3 px-2 font-medium">{s.regNumber}</td><td className="py-3 px-2 font-bold">{s.name}</td><td className="py-3 px-2">{s.program}</td><td className="py-3 px-2"><div>{s.supervisor}</div>{s.coSupervisor && <div className="text-xs text-gray-500">Co: {s.coSupervisor}</div>}</td><td className="py-3 px-2"><span className="px-2 py-1 bg-gray-200 rounded text-xs">{s.status}</span></td><td className="py-3 px-2 text-right font-bold">{calculateProgress(s)}%</td></tr>
                   {/* SAFE REPORT RENDER - DEFAULTS TO EMPTY OBJECT IF DATA MISSING */}
-                  <tr className="print:table-row hidden"><td colSpan="6" className="py-2 px-4 pb-4"><div className="grid grid-cols-4 gap-2 text-xs text-gray-500">{(PROGRAM_STRUCTURE[s.program] ? PROGRAM_STRUCTURE[s.program].stages : []).map(stage => { const p = (s.progress || {})[stage.id]; return (<div key={stage.id} className="border p-1 rounded"><strong>{stage.label}:</strong> {p ? `${(p.status || 'unknown').toUpperCase()} (${formatDate(p.date)})` : 'Pending'}</div>) })}</div></td></tr>
+                  <tr className="print:table-row hidden"><td colSpan="6" className="py-2 px-4 pb-4"><div className="grid grid-cols-4 gap-2 text-xs text-gray-500">{(PROGRAM_STRUCTURE[s.program] || DEFAULT_STRUCTURE).stages.map(stage => { const p = (s.progress || {})[stage.id]; return (<div key={stage.id} className="border p-1 rounded"><strong>{stage.label}:</strong> {p ? `${(p.status || 'unknown').toUpperCase()} (${formatDate(p.date)})` : 'Pending'}</div>) })}</div></td></tr>
                 </React.Fragment>
               ))}
               {filteredStudents.length === 0 && <tr><td colSpan="6" className="text-center py-8 text-gray-400">No students found.</td></tr>}
