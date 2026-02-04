@@ -36,7 +36,8 @@ import {
   Lock,
   LogOut,
   Key,
-  Shield
+  Shield,
+  Briefcase
 } from 'lucide-react';
 
 /**
@@ -89,7 +90,7 @@ const getDurationStats = (dateString, program) => {
     const date = new Date(dateString);
     if (isNaN(date.getTime())) return { text: '', status: 'neutral' };
     const diffMonths = (new Date().getFullYear() - date.getFullYear()) * 12 + (new Date().getMonth() - date.getMonth());
-    const limit = (PROGRAM_STRUCTURE[program] || PROGRAM_STRUCTURE['MSc']).maxMonths; // Fallback to MSc
+    const limit = (PROGRAM_STRUCTURE[program] || PROGRAM_STRUCTURE['MSc']).maxMonths; 
     let status = 'good';
     if (diffMonths > limit) status = 'critical';
     else if (diffMonths > limit - 6) status = 'warning';
@@ -157,7 +158,7 @@ const LoginView = ({ onLogin, verifyCredentials }) => {
   };
 
   const handleReset = () => {
-    if (confirm('This will reset Admin password to default (password123) and reload. Data is safe. Continue?')) {
+    if (confirm('This will reset Admin password to default (password123). Your student data will remain safe. Continue?')) {
       localStorage.removeItem('pg_auth_config');
       window.location.reload();
     }
@@ -198,7 +199,6 @@ export default function App() {
   const [students, setStudents] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('pg_students'));
-      // SANITIZATION: Filter out nulls/undefined immediately on load
       return Array.isArray(saved) ? saved.filter(s => s && s.id) : INITIAL_STUDENTS;
     } catch (e) {
       return INITIAL_STUDENTS;
@@ -464,7 +464,7 @@ export default function App() {
         const cleanProgram = program?.trim();
         const cleanReg = regNumber?.trim();
         if (!PROGRAM_STRUCTURE[cleanProgram]) continue; 
-        if (students.some(s => s && s.regNumber === cleanReg) || newStudents.some(s => s.regNumber === cleanReg)) {
+        if (students.some(s => s.regNumber === cleanReg) || newStudents.some(s => s.regNumber === cleanReg)) {
           duplicateRegs.push(cleanReg);
           continue;
         }
@@ -704,7 +704,8 @@ export default function App() {
           <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 border-b pb-2">Academic Presentation History</h4>
           <table className="w-full text-left text-sm mb-12 border-collapse">
             <thead><tr className="bg-gray-50"><th className="border p-3 font-bold text-gray-700">Presentation Stage</th><th className="border p-3 font-bold text-gray-700">Date</th><th className="border p-3 font-bold text-gray-700">Status</th><th className="border p-3 font-bold text-gray-700">Score</th><th className="border p-3 font-bold text-gray-700">Remarks</th></tr></thead>
-            <tbody>{(PROGRAM_STRUCTURE[reportStudent.program]?.stages || []).map(stage => { const p = (reportStudent.progress || {})[stage.id]; return (<tr key={stage.id} className=""><td className="border p-3 font-medium">{stage.label}</td><td className="border p-3">{p ? formatDate(p.date) : '-'}</td><td className="border p-3">{p ? (<span className={`px-2 py-1 rounded text-xs font-bold ${p.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>{p.status.toUpperCase()}</span>) : <span className="text-gray-400">PENDING</span>}</td><td className="border p-3 font-bold">{p?.score || '-'}</td><td className="border p-3 text-gray-600 italic">{p?.remarks || '-'}</td></tr>); })}</tbody>
+            {/* SAFETY ACCESS FOR PROGRESS */}
+            <tbody>{(PROGRAM_STRUCTURE[reportStudent.program]?.stages || []).map(stage => { const p = (reportStudent.progress || {})[stage.id]; return (<tr key={stage.id} className=""><td className="border p-3 font-medium">{stage.label}</td><td className="border p-3">{p ? formatDate(p.date) : '-'}</td><td className="border p-3">{p ? (<span className={`px-2 py-1 rounded text-xs font-bold ${p.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>{(p.status || 'unknown').toUpperCase()}</span>) : <span className="text-gray-400">PENDING</span>}</td><td className="border p-3 font-bold">{p?.score || '-'}</td><td className="border p-3 text-gray-600 italic">{p?.remarks || '-'}</td></tr>); })}</tbody>
           </table>
           <div className="mt-20 grid grid-cols-2 gap-12 pt-8 border-t border-gray-200"><div className="text-center"><div className="h-16 border-b border-gray-400 mb-2"></div><p className="font-bold text-gray-900">PG Coordinator</p><p className="text-xs text-gray-500">Signature & Date</p></div><div className="text-center"><div className="h-16 border-b border-gray-400 mb-2"></div><p className="font-bold text-gray-900">Dean, College of Computing</p><p className="text-xs text-gray-500">Signature & Date</p></div></div>
         </div>
