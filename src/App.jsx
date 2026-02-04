@@ -82,7 +82,9 @@ const getDurationStats = (dateString, program) => {
 const calculateProgress = (student) => {
   const structure = PROGRAM_STRUCTURE[student.program];
   if (!structure) return 0;
-  const completed = structure.stages.filter(stage => student.progress[stage.id]?.status === 'completed').length;
+  // SAFETY CHECK: Ensure progress object exists
+  const progressObj = student.progress || {};
+  const completed = structure.stages.filter(stage => progressObj[stage.id]?.status === 'completed').length;
   return Math.round((completed / structure.stages.length) * 100);
 };
 
@@ -264,7 +266,9 @@ export default function App() {
       alumni: students.filter(s => s.status === 'Alumni').length,
       delayed: sourceData.filter(s => getDurationStats(s.joinedDate, s.program).status === 'critical').length,
       upcoming: sourceData.reduce((acc, curr) => {
-        return acc + Object.values(curr.progress).filter(p => p.status === 'scheduled').length;
+        // SAFETY CHECK: Ensure progress exists
+        const progress = curr.progress || {};
+        return acc + Object.values(progress).filter(p => p.status === 'scheduled').length;
       }, 0)
     };
   }, [students]);
@@ -280,7 +284,8 @@ export default function App() {
     const donutData = programs.map(p => ({ ...p, color: colorMap[p.label] || '#ccc' }));
     const stages = [{ id: 'proposal', label: 'Proposal' }, { id: 'predata', label: 'Pre-Data' }, { id: 'postdata', label: 'Post-Data' }, { id: 'viva', label: 'Viva Voce' }];
     const pipelineData = stages.map(stage => {
-      const count = source.filter(s => s.progress[stage.id]?.status === 'completed').length;
+      // SAFETY CHECK: Ensure progress exists
+      const count = source.filter(s => (s.progress || {})[stage.id]?.status === 'completed').length;
       return { label: stage.label, value: count, color: 'bg-indigo-500' };
     });
     return { donutData, pipelineData };
@@ -363,7 +368,8 @@ export default function App() {
   const openScheduleModal = (student, stageId) => {
     setSelectedStudent(student);
     setSelectedStageId(stageId);
-    const existing = student.progress[stageId] || { date: '', time: '', venue: '', status: 'scheduled', score: '', remarks: '', docLink: '' };
+    // SAFETY CHECK: Ensure progress exists
+    const existing = (student.progress || {})[stageId] || { date: '', time: '', venue: '', status: 'scheduled', score: '', remarks: '', docLink: '' };
     setScheduleForm(existing);
     setIsScheduleModalOpen(true);
   };
@@ -585,7 +591,7 @@ export default function App() {
                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Presentation Track</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   {programConfig.stages.map((stage) => {
-                    const data = student.progress[stage.id];
+                    const data = (student.progress || {})[stage.id];
                     return (
                       <div key={stage.id} onClick={() => openScheduleModal(student, stage.id)} className={`relative p-3 rounded-lg border cursor-pointer transition-all group ${data?.status === 'completed' ? 'bg-white border-green-200 hover:border-green-300' : data?.status === 'scheduled' ? 'bg-white border-blue-200 hover:border-blue-300' : 'bg-gray-50 border-gray-200 border-dashed hover:border-gray-300 hover:bg-white'}`}>
                         <div className="flex justify-between items-start mb-2"><span className="text-xs font-semibold text-gray-700 truncate max-w-[80%]">{stage.label}</span>{data?.status === 'completed' && <CheckCircle size={14} className="text-green-500" />}{data?.status === 'scheduled' && <Clock size={14} className="text-blue-500" />}{!data && <Plus size={14} className="text-gray-400 group-hover:text-indigo-500" />}</div>
@@ -642,7 +648,7 @@ export default function App() {
               {filteredStudents.map((s) => (
                 <React.Fragment key={s.id}>
                   <tr className="bg-gray-50/50"><td className="py-3 px-2 font-medium">{s.regNumber}</td><td className="py-3 px-2 font-bold">{s.name}</td><td className="py-3 px-2">{s.program}</td><td className="py-3 px-2"><div>{s.supervisor}</div>{s.coSupervisor && <div className="text-xs text-gray-500">Co: {s.coSupervisor}</div>}</td><td className="py-3 px-2"><span className="px-2 py-1 bg-gray-200 rounded text-xs">{s.status}</span></td><td className="py-3 px-2 text-right font-bold">{calculateProgress(s)}%</td></tr>
-                  <tr className="print:table-row hidden"><td colSpan="6" className="py-2 px-4 pb-4"><div className="grid grid-cols-4 gap-2 text-xs text-gray-500">{(PROGRAM_STRUCTURE[s.program]?.stages || []).map(stage => { const p = s.progress[stage.id]; return (<div key={stage.id} className="border p-1 rounded"><strong>{stage.label}:</strong> {p ? `${p.status.toUpperCase()} (${formatDate(p.date)})` : 'Pending'}</div>) })}</div></td></tr>
+                  <tr className="print:table-row hidden"><td colSpan="6" className="py-2 px-4 pb-4"><div className="grid grid-cols-4 gap-2 text-xs text-gray-500">{(PROGRAM_STRUCTURE[s.program]?.stages || []).map(stage => { const p = (s.progress || {})[stage.id]; return (<div key={stage.id} className="border p-1 rounded"><strong>{stage.label}:</strong> {p ? `${p.status.toUpperCase()} (${formatDate(p.date)})` : 'Pending'}</div>) })}</div></td></tr>
                 </React.Fragment>
               ))}
               {filteredStudents.length === 0 && <tr><td colSpan="6" className="text-center py-8 text-gray-400">No students found.</td></tr>}
@@ -668,7 +674,7 @@ export default function App() {
           <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 border-b pb-2">Academic Presentation History</h4>
           <table className="w-full text-left text-sm mb-12 border-collapse">
             <thead><tr className="bg-gray-50"><th className="border p-3 font-bold text-gray-700">Presentation Stage</th><th className="border p-3 font-bold text-gray-700">Date</th><th className="border p-3 font-bold text-gray-700">Status</th><th className="border p-3 font-bold text-gray-700">Score</th><th className="border p-3 font-bold text-gray-700">Remarks</th></tr></thead>
-            <tbody>{(PROGRAM_STRUCTURE[reportStudent.program]?.stages || []).map(stage => { const p = reportStudent.progress[stage.id]; return (<tr key={stage.id} className=""><td className="border p-3 font-medium">{stage.label}</td><td className="border p-3">{p ? formatDate(p.date) : '-'}</td><td className="border p-3">{p ? (<span className={`px-2 py-1 rounded text-xs font-bold ${p.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>{p.status.toUpperCase()}</span>) : <span className="text-gray-400">PENDING</span>}</td><td className="border p-3 font-bold">{p?.score || '-'}</td><td className="border p-3 text-gray-600 italic">{p?.remarks || '-'}</td></tr>); })}</tbody>
+            <tbody>{(PROGRAM_STRUCTURE[reportStudent.program]?.stages || []).map(stage => { const p = (reportStudent.progress || {})[stage.id]; return (<tr key={stage.id} className=""><td className="border p-3 font-medium">{stage.label}</td><td className="border p-3">{p ? formatDate(p.date) : '-'}</td><td className="border p-3">{p ? (<span className={`px-2 py-1 rounded text-xs font-bold ${p.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>{p.status.toUpperCase()}</span>) : <span className="text-gray-400">PENDING</span>}</td><td className="border p-3 font-bold">{p?.score || '-'}</td><td className="border p-3 text-gray-600 italic">{p?.remarks || '-'}</td></tr>); })}</tbody>
           </table>
           <div className="mt-20 grid grid-cols-2 gap-12 pt-8 border-t border-gray-200"><div className="text-center"><div className="h-16 border-b border-gray-400 mb-2"></div><p className="font-bold text-gray-900">PG Coordinator</p><p className="text-xs text-gray-500">Signature & Date</p></div><div className="text-center"><div className="h-16 border-b border-gray-400 mb-2"></div><p className="font-bold text-gray-900">Dean, College of Computing</p><p className="text-xs text-gray-500">Signature & Date</p></div></div>
         </div>
@@ -715,8 +721,6 @@ export default function App() {
   // MAIN RENDER (Using if check from start of component)
   if (!currentUser) return <LoginView onLogin={setCurrentUser} verifyCredentials={verifyCredentials} />;
 
-  // ... (The main dashboard return block is identical to previous, just ensuring it has access to the view components defined above)
-  
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800 font-sans">
       <style>{`@media print { .no-print, aside, nav, .sidebar { display: none !important; } body, main { margin: 0 !important; width: 100% !important; } }`}</style>
