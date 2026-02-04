@@ -36,8 +36,7 @@ import {
   Lock,
   LogOut,
   Key,
-  Shield,
-  Briefcase
+  Shield
 } from 'lucide-react';
 
 /**
@@ -64,31 +63,46 @@ const INITIAL_STAFF = [
  * HELPER FUNCTIONS
  */
 const generateId = () => Math.random().toString(36).substr(2, 9);
-const formatDate = (dateString) => dateString ? new Date(dateString).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '-';
+
+// SAFE FORMAT DATE - Prevents crash on invalid dates
+const formatDate = (dateString) => {
+  if (!dateString) return '-';
+  const date = new Date(dateString);
+  // Check if date is valid
+  if (isNaN(date.getTime())) return '-';
+  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+
 const getDuration = (dateString) => {
   if (!dateString) return '';
-  const diffTime = Math.abs(new Date() - new Date(dateString));
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return '';
+  const diffTime = Math.abs(new Date() - date);
   return `${(diffTime / (1000 * 60 * 60 * 24 * 365)).toFixed(1)} yrs`;
 };
+
 const getDurationStats = (dateString, program) => {
   if (!dateString) return { text: '', status: 'neutral' };
-  const diffMonths = (new Date().getFullYear() - new Date(dateString).getFullYear()) * 12 + (new Date().getMonth() - new Date(dateString).getMonth());
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return { text: '', status: 'neutral' };
+  
+  const diffMonths = (new Date().getFullYear() - date.getFullYear()) * 12 + (new Date().getMonth() - date.getMonth());
   const limit = PROGRAM_STRUCTURE[program]?.maxMonths || 24;
   let status = 'good';
   if (diffMonths > limit) status = 'critical';
   else if (diffMonths > limit - 6) status = 'warning';
   return { text: `${(diffMonths / 12).toFixed(1)} yrs`, status, rawMonths: diffMonths };
 };
+
 const calculateProgress = (student) => {
   const structure = PROGRAM_STRUCTURE[student.program];
   if (!structure) return 0;
-  // SAFETY CHECK: Ensure progress object exists
   const progressObj = student.progress || {};
   const completed = structure.stages.filter(stage => progressObj[stage.id]?.status === 'completed').length;
   return Math.round((completed / structure.stages.length) * 100);
 };
 
-// --- CUSTOM MINI CHART COMPONENTS ---
+// --- CHART COMPONENTS ---
 const SimpleBarChart = ({ data, color }) => {
   const max = Math.max(...data.map(d => d.value), 1);
   return (
@@ -247,7 +261,7 @@ export default function App() {
       if (currentUser?.role === 'staff') {
         matchesRole = s.supervisor === currentUser.name || s.coSupervisor === currentUser.name;
       } else {
-        matchesRole = selectedSupervisor === 'All Supervisors' || (s.supervisor && s.supervisor.trim() === selectedSupervisor) || (s.coSupervisor && s.coSupervisor.trim() === selectedSupervisor);
+        matchesRole = selectedSupervisor === 'All Supervisors' || (s.supervisor && String(s.supervisor).trim() === selectedSupervisor) || (s.coSupervisor && String(s.coSupervisor).trim() === selectedSupervisor);
       }
       const matchesProgram = selectedProgram === 'All Programs' || s.program === selectedProgram;
       return matchesSearch && matchesRole && matchesProgram;
@@ -266,7 +280,6 @@ export default function App() {
       alumni: students.filter(s => s.status === 'Alumni').length,
       delayed: sourceData.filter(s => getDurationStats(s.joinedDate, s.program).status === 'critical').length,
       upcoming: sourceData.reduce((acc, curr) => {
-        // SAFETY CHECK: Ensure progress exists
         const progress = curr.progress || {};
         return acc + Object.values(progress).filter(p => p.status === 'scheduled').length;
       }, 0)
@@ -284,7 +297,6 @@ export default function App() {
     const donutData = programs.map(p => ({ ...p, color: colorMap[p.label] || '#ccc' }));
     const stages = [{ id: 'proposal', label: 'Proposal' }, { id: 'predata', label: 'Pre-Data' }, { id: 'postdata', label: 'Post-Data' }, { id: 'viva', label: 'Viva Voce' }];
     const pipelineData = stages.map(stage => {
-      // SAFETY CHECK: Ensure progress exists
       const count = source.filter(s => (s.progress || {})[stage.id]?.status === 'completed').length;
       return { label: stage.label, value: count, color: 'bg-indigo-500' };
     });
@@ -368,7 +380,6 @@ export default function App() {
   const openScheduleModal = (student, stageId) => {
     setSelectedStudent(student);
     setSelectedStageId(stageId);
-    // SAFETY CHECK: Ensure progress exists
     const existing = (student.progress || {})[stageId] || { date: '', time: '', venue: '', status: 'scheduled', score: '', remarks: '', docLink: '' };
     setScheduleForm(existing);
     setIsScheduleModalOpen(true);
@@ -502,7 +513,7 @@ export default function App() {
     </div>
   );
 
-  // --- RESTORED VIEW COMPONENTS ---
+  // --- VIEW COMPONENTS ---
 
   const StaffView = () => (
     <div className="space-y-4 animate-in fade-in">
@@ -648,7 +659,7 @@ export default function App() {
               {filteredStudents.map((s) => (
                 <React.Fragment key={s.id}>
                   <tr className="bg-gray-50/50"><td className="py-3 px-2 font-medium">{s.regNumber}</td><td className="py-3 px-2 font-bold">{s.name}</td><td className="py-3 px-2">{s.program}</td><td className="py-3 px-2"><div>{s.supervisor}</div>{s.coSupervisor && <div className="text-xs text-gray-500">Co: {s.coSupervisor}</div>}</td><td className="py-3 px-2"><span className="px-2 py-1 bg-gray-200 rounded text-xs">{s.status}</span></td><td className="py-3 px-2 text-right font-bold">{calculateProgress(s)}%</td></tr>
-                  <tr className="print:table-row hidden"><td colSpan="6" className="py-2 px-4 pb-4"><div className="grid grid-cols-4 gap-2 text-xs text-gray-500">{(PROGRAM_STRUCTURE[s.program]?.stages || []).map(stage => { const p = (s.progress || {})[stage.id]; return (<div key={stage.id} className="border p-1 rounded"><strong>{stage.label}:</strong> {p ? `${p.status.toUpperCase()} (${formatDate(p.date)})` : 'Pending'}</div>) })}</div></td></tr>
+                  <tr className="print:table-row hidden"><td colSpan="6" className="py-2 px-4 pb-4"><div className="grid grid-cols-4 gap-2 text-xs text-gray-500">{(PROGRAM_STRUCTURE[s.program]?.stages || []).map(stage => { const p = (s.progress || {})[stage.id]; return (<div key={stage.id} className="border p-1 rounded"><strong>{stage.label}:</strong> {p ? `${(p.status || 'unknown').toUpperCase()} (${formatDate(p.date)})` : 'Pending'}</div>) })}</div></td></tr>
                 </React.Fragment>
               ))}
               {filteredStudents.length === 0 && <tr><td colSpan="6" className="text-center py-8 text-gray-400">No students found.</td></tr>}
@@ -737,7 +748,7 @@ export default function App() {
             <button onClick={() => setActiveTab('students')} className={`w-full flex items-center px-4 py-3 rounded-xl transition-all ${activeTab === 'students' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-500 hover:bg-gray-50'}`}><Users size={20} className="mr-3" /> Students</button>
             {currentUser.role === 'admin' && (
               <>
-                <button onClick={() => setActiveTab('staff')} className={`w-full flex items-center px-4 py-3 rounded-xl transition-all ${activeTab === 'staff' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-500 hover:bg-gray-50'}`}><Briefcase size={20} className="mr-3" /> Staff</button>
+                <button onClick={() => setActiveTab('staff')} className={`w-full flex items-center px-4 py-3 rounded-xl transition-all ${activeTab === 'staff' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-500 hover:bg-gray-50'}`}><Shield size={20} className="mr-3" /> Staff</button>
                 <button onClick={() => setActiveTab('alumni')} className={`w-full flex items-center px-4 py-3 rounded-xl transition-all ${activeTab === 'alumni' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-500 hover:bg-gray-50'}`}><Archive size={20} className="mr-3" /> Alumni</button>
                 <button onClick={() => setActiveTab('reports')} className={`w-full flex items-center px-4 py-3 rounded-xl transition-all ${activeTab === 'reports' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-500 hover:bg-gray-50'}`}><FileText size={20} className="mr-3" /> Reports</button>
                 <button onClick={() => setActiveTab('settings')} className={`w-full flex items-center px-4 py-3 rounded-xl transition-all ${activeTab === 'settings' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-500 hover:bg-gray-50'}`}><Settings size={20} className="mr-3" /> Settings</button>
