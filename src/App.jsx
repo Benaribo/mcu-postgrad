@@ -36,7 +36,8 @@ import {
   Lock,
   LogOut,
   Key,
-  Shield
+  Shield,
+  Briefcase
 } from 'lucide-react';
 
 /**
@@ -63,16 +64,12 @@ const INITIAL_STAFF = [
  * HELPER FUNCTIONS
  */
 const generateId = () => Math.random().toString(36).substr(2, 9);
-
-// SAFE FORMAT DATE - Prevents crash on invalid dates
 const formatDate = (dateString) => {
   if (!dateString) return '-';
   const date = new Date(dateString);
-  // Check if date is valid
   if (isNaN(date.getTime())) return '-';
   return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 };
-
 const getDuration = (dateString) => {
   if (!dateString) return '';
   const date = new Date(dateString);
@@ -80,7 +77,6 @@ const getDuration = (dateString) => {
   const diffTime = Math.abs(new Date() - date);
   return `${(diffTime / (1000 * 60 * 60 * 24 * 365)).toFixed(1)} yrs`;
 };
-
 const getDurationStats = (dateString, program) => {
   if (!dateString) return { text: '', status: 'neutral' };
   const date = new Date(dateString);
@@ -93,7 +89,6 @@ const getDurationStats = (dateString, program) => {
   else if (diffMonths > limit - 6) status = 'warning';
   return { text: `${(diffMonths / 12).toFixed(1)} yrs`, status, rawMonths: diffMonths };
 };
-
 const calculateProgress = (student) => {
   const structure = PROGRAM_STRUCTURE[student.program];
   if (!structure) return 0;
@@ -249,10 +244,18 @@ export default function App() {
     alert("Admin password updated successfully!");
   };
 
+  // ROBUST SUPERVISOR LIST: Combines staff list AND existing student records to prevent missing data
   const uniqueSupervisors = useMemo(() => {
-    const sups = new Set(staff.map(s => s.name));
+    const sups = new Set();
+    // 1. Add from Staff DB
+    staff.forEach(s => sups.add(s.name.trim()));
+    // 2. Add from Student DB (legacy records)
+    students.forEach(s => {
+      if (s.supervisor) sups.add(s.supervisor.trim());
+      if (s.coSupervisor) sups.add(s.coSupervisor.trim());
+    });
     return ['All Supervisors', ...Array.from(sups).sort()];
-  }, [staff]);
+  }, [staff, students]);
 
   const filteredStudents = useMemo(() => {
     return students.filter(s => {
@@ -602,6 +605,7 @@ export default function App() {
                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Presentation Track</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   {programConfig.stages.map((stage) => {
+                    // SAFETY ACCESS FOR PROGRESS
                     const data = (student.progress || {})[stage.id];
                     return (
                       <div key={stage.id} onClick={() => openScheduleModal(student, stage.id)} className={`relative p-3 rounded-lg border cursor-pointer transition-all group ${data?.status === 'completed' ? 'bg-white border-green-200 hover:border-green-300' : data?.status === 'scheduled' ? 'bg-white border-blue-200 hover:border-blue-300' : 'bg-gray-50 border-gray-200 border-dashed hover:border-gray-300 hover:bg-white'}`}>
@@ -659,6 +663,7 @@ export default function App() {
               {filteredStudents.map((s) => (
                 <React.Fragment key={s.id}>
                   <tr className="bg-gray-50/50"><td className="py-3 px-2 font-medium">{s.regNumber}</td><td className="py-3 px-2 font-bold">{s.name}</td><td className="py-3 px-2">{s.program}</td><td className="py-3 px-2"><div>{s.supervisor}</div>{s.coSupervisor && <div className="text-xs text-gray-500">Co: {s.coSupervisor}</div>}</td><td className="py-3 px-2"><span className="px-2 py-1 bg-gray-200 rounded text-xs">{s.status}</span></td><td className="py-3 px-2 text-right font-bold">{calculateProgress(s)}%</td></tr>
+                  {/* SAFETY ACCESS FOR PROGRESS */}
                   <tr className="print:table-row hidden"><td colSpan="6" className="py-2 px-4 pb-4"><div className="grid grid-cols-4 gap-2 text-xs text-gray-500">{(PROGRAM_STRUCTURE[s.program]?.stages || []).map(stage => { const p = (s.progress || {})[stage.id]; return (<div key={stage.id} className="border p-1 rounded"><strong>{stage.label}:</strong> {p ? `${(p.status || 'unknown').toUpperCase()} (${formatDate(p.date)})` : 'Pending'}</div>) })}</div></td></tr>
                 </React.Fragment>
               ))}
@@ -685,6 +690,7 @@ export default function App() {
           <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 border-b pb-2">Academic Presentation History</h4>
           <table className="w-full text-left text-sm mb-12 border-collapse">
             <thead><tr className="bg-gray-50"><th className="border p-3 font-bold text-gray-700">Presentation Stage</th><th className="border p-3 font-bold text-gray-700">Date</th><th className="border p-3 font-bold text-gray-700">Status</th><th className="border p-3 font-bold text-gray-700">Score</th><th className="border p-3 font-bold text-gray-700">Remarks</th></tr></thead>
+            {/* SAFETY ACCESS FOR PROGRESS */}
             <tbody>{(PROGRAM_STRUCTURE[reportStudent.program]?.stages || []).map(stage => { const p = (reportStudent.progress || {})[stage.id]; return (<tr key={stage.id} className=""><td className="border p-3 font-medium">{stage.label}</td><td className="border p-3">{p ? formatDate(p.date) : '-'}</td><td className="border p-3">{p ? (<span className={`px-2 py-1 rounded text-xs font-bold ${p.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>{p.status.toUpperCase()}</span>) : <span className="text-gray-400">PENDING</span>}</td><td className="border p-3 font-bold">{p?.score || '-'}</td><td className="border p-3 text-gray-600 italic">{p?.remarks || '-'}</td></tr>); })}</tbody>
           </table>
           <div className="mt-20 grid grid-cols-2 gap-12 pt-8 border-t border-gray-200"><div className="text-center"><div className="h-16 border-b border-gray-400 mb-2"></div><p className="font-bold text-gray-900">PG Coordinator</p><p className="text-xs text-gray-500">Signature & Date</p></div><div className="text-center"><div className="h-16 border-b border-gray-400 mb-2"></div><p className="font-bold text-gray-900">Dean, College of Computing</p><p className="text-xs text-gray-500">Signature & Date</p></div></div>
