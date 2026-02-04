@@ -31,7 +31,8 @@ import {
   Clock3,
   Archive,
   UserPlus,
-  ArrowLeft
+  ArrowLeft,
+  AlertTriangle
 } from 'lucide-react';
 
 /**
@@ -44,7 +45,8 @@ const PROGRAM_STRUCTURE = {
     stages: [
       { id: 'final', label: 'Final Project Defense' }
     ],
-    color: 'bg-emerald-500'
+    color: 'bg-emerald-500',
+    maxMonths: 18 // Warning threshold
   },
   MSc: {
     label: "Master of Science (MSc)",
@@ -52,7 +54,8 @@ const PROGRAM_STRUCTURE = {
       { id: 'predata', label: 'Pre-Data Seminar' },
       { id: 'postdata', label: 'Post-Data Seminar' }
     ],
-    color: 'bg-blue-500'
+    color: 'bg-blue-500',
+    maxMonths: 24
   },
   MPhil: {
     label: "Master of Philosophy (MPhil)",
@@ -60,7 +63,8 @@ const PROGRAM_STRUCTURE = {
       { id: 'predata', label: 'Pre-Data Seminar' },
       { id: 'postdata', label: 'Post-Data Seminar' }
     ],
-    color: 'bg-cyan-500'
+    color: 'bg-cyan-500',
+    maxMonths: 24
   },
   PhD: {
     label: "Doctor of Philosophy (PhD)",
@@ -70,7 +74,8 @@ const PROGRAM_STRUCTURE = {
       { id: 'postdata', label: 'Post-Data Seminar' },
       { id: 'viva', label: 'Viva Voce' }
     ],
-    color: 'bg-purple-600'
+    color: 'bg-purple-600',
+    maxMonths: 48
   }
 };
 
@@ -116,13 +121,25 @@ const formatDate = (dateString) => {
   });
 };
 
-const getDuration = (dateString) => {
-  if (!dateString) return '';
+const getDurationStats = (dateString, program) => {
+  if (!dateString) return { text: '', status: 'neutral' };
+  
   const start = new Date(dateString);
   const now = new Date();
-  const diffTime = Math.abs(now - start);
-  const years = (diffTime / (1000 * 60 * 60 * 24 * 365)).toFixed(1);
-  return `${years} yrs`;
+  const diffMonths = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
+  const years = (diffMonths / 12).toFixed(1);
+  
+  const limit = PROGRAM_STRUCTURE[program]?.maxMonths || 24;
+  
+  let status = 'good';
+  if (diffMonths > limit) status = 'critical';
+  else if (diffMonths > limit - 6) status = 'warning'; // Warn if within 6 months of limit
+
+  return { 
+    text: `${years} yrs`, 
+    status,
+    rawMonths: diffMonths
+  };
 };
 
 const calculateProgress = (student) => {
@@ -135,7 +152,7 @@ const calculateProgress = (student) => {
   return Math.round((completedStages / totalStages) * 100);
 };
 
-// --- CUSTOM MINI CHART COMPONENTS (Zero Dependency) ---
+// --- CUSTOM MINI CHART COMPONENTS ---
 const SimpleBarChart = ({ data, color }) => {
   const max = Math.max(...data.map(d => d.value), 1);
   return (
@@ -189,7 +206,7 @@ export default function App() {
   });
   
   const [selectedSupervisor, setSelectedSupervisor] = useState('All Supervisors');
-  const [selectedProgram, setSelectedProgram] = useState('All Programs'); // New Program Filter State
+  const [selectedProgram, setSelectedProgram] = useState('All Programs');
 
   const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
@@ -240,11 +257,17 @@ export default function App() {
 
   const stats = useMemo(() => {
     const sourceData = students.filter(s => s.status !== 'Alumni'); 
+    
+    // Risk Calculation
+    const delayedCount = sourceData.filter(s => {
+      const duration = getDurationStats(s.joinedDate, s.program);
+      return duration.status === 'critical';
+    }).length;
+
     return {
       total: sourceData.length,
       phd: sourceData.filter(s => s.program === 'PhD').length,
-      msc: sourceData.filter(s => s.program === 'MSc').length,
-      alumni: students.filter(s => s.status === 'Alumni').length,
+      delayed: delayedCount, // New Stat
       upcoming: sourceData.reduce((acc, curr) => {
         const hasUpcoming = Object.values(curr.progress).some(p => p.status === 'scheduled');
         return hasUpcoming ? acc + 1 : acc;
@@ -278,14 +301,11 @@ export default function App() {
   // Actions
   const handleAddStudent = (e) => {
     e.preventDefault();
-    
-    // VALIDATION: Check for duplicate Reg Number
     const cleanReg = studentForm.regNumber.trim();
     if (!selectedStudent && students.some(s => s.regNumber.toLowerCase() === cleanReg.toLowerCase())) {
       alert('Error: A student with this Registration Number already exists.');
       return;
     }
-
     if (selectedStudent && selectedStudent.id) {
       setStudents(prev => prev.map(s => s.id === selectedStudent.id ? { ...s, ...studentForm } : s));
     } else {
@@ -348,7 +368,6 @@ export default function App() {
     resetForms();
   };
 
-  // Data Management Actions
   const handleExportData = () => {
     const dataStr = JSON.stringify(students, null, 2);
     const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
@@ -397,7 +416,6 @@ export default function App() {
   const handleBulkCSVUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = (evt) => {
       const text = evt.target.result;
@@ -410,19 +428,14 @@ export default function App() {
         if(!line) continue;
         const parts = line.split(','); 
         if(parts.length < 4) continue; 
-
         const [name, regNumber, email, program, supervisor, coSupervisor, joinedDate] = parts;
         const cleanProgram = program?.trim();
         const cleanReg = regNumber?.trim();
-
         if (!PROGRAM_STRUCTURE[cleanProgram]) continue; 
-
-        // DUPLICATE CHECK
         if (students.some(s => s.regNumber === cleanReg) || newStudents.some(s => s.regNumber === cleanReg)) {
           duplicateRegs.push(cleanReg);
           continue;
         }
-
         newStudents.push({
           id: generateId(),
           name: name?.trim(),
@@ -436,7 +449,6 @@ export default function App() {
           progress: {}
         });
       }
-
       if(newStudents.length > 0) {
         if(confirm(`Found ${newStudents.length} valid new students.${duplicateRegs.length > 0 ? ` Skipped ${duplicateRegs.length} duplicates.` : ''} Import them?`)) {
           setStudents(prev => [...prev, ...newStudents]);
@@ -542,41 +554,23 @@ export default function App() {
 
   const triggerPrint = () => window.print();
 
-  // --- REUSABLE FILTER COMPONENT ---
   const FiltersBar = () => (
     <div className="flex flex-col sm:flex-row gap-2">
-      {/* Supervisor Filter */}
       <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm">
         <Filter size={16} className="text-gray-400" />
-        <select 
-          value={selectedSupervisor}
-          onChange={(e) => setSelectedSupervisor(e.target.value)}
-          className="bg-transparent text-sm text-gray-700 outline-none cursor-pointer w-full sm:w-auto"
-        >
-          {uniqueSupervisors.map(sup => (
-            <option key={sup} value={sup}>{sup}</option>
-          ))}
+        <select value={selectedSupervisor} onChange={(e) => setSelectedSupervisor(e.target.value)} className="bg-transparent text-sm text-gray-700 outline-none cursor-pointer w-full sm:w-auto">
+          {uniqueSupervisors.map(sup => (<option key={sup} value={sup}>{sup}</option>))}
         </select>
       </div>
-
-      {/* Program Filter */}
       <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm">
         <GraduationCap size={16} className="text-gray-400" />
-        <select 
-          value={selectedProgram}
-          onChange={(e) => setSelectedProgram(e.target.value)}
-          className="bg-transparent text-sm text-gray-700 outline-none cursor-pointer w-full sm:w-auto"
-        >
+        <select value={selectedProgram} onChange={(e) => setSelectedProgram(e.target.value)} className="bg-transparent text-sm text-gray-700 outline-none cursor-pointer w-full sm:w-auto">
           <option value="All Programs">All Programs</option>
-          {Object.keys(PROGRAM_STRUCTURE).map(prog => (
-            <option key={prog} value={prog}>{prog}</option>
-          ))}
+          {Object.keys(PROGRAM_STRUCTURE).map(prog => (<option key={prog} value={prog}>{prog}</option>))}
         </select>
       </div>
     </div>
   );
-
-  // --- VIEWS ---
 
   const DashboardView = () => (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -587,40 +581,20 @@ export default function App() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
+          { label: 'Active Students', val: stats.total, icon: Users, color: 'bg-indigo-600', action: () => { setActiveTab('students'); setSelectedProgram('All Programs'); } },
+          { label: 'PhD Candidates', val: stats.phd, icon: GraduationCap, color: 'bg-purple-600', action: () => { setActiveTab('students'); setSelectedProgram('PhD'); } },
+          { label: 'Total Alumni', val: stats.alumni, icon: Archive, color: 'bg-gray-600', action: () => setActiveTab('alumni') },
+          
+          /* NEW: Overdue/Delayed Stats Card */
           { 
-            label: 'Active Students', 
-            val: stats.total, 
-            icon: Users, 
-            color: 'bg-indigo-600',
-            action: () => { setActiveTab('students'); setSelectedProgram('All Programs'); }
-          },
-          { 
-            label: 'PhD Candidates', 
-            val: stats.phd, 
-            icon: GraduationCap, 
-            color: 'bg-purple-600',
-            action: () => { setActiveTab('students'); setSelectedProgram('PhD'); } // Quick Filter
-          },
-          { 
-            label: 'Total Alumni', 
-            val: stats.alumni, 
-            icon: Archive, 
-            color: 'bg-gray-600',
-            action: () => setActiveTab('alumni')
-          },
-          { 
-            label: 'Upcoming Events', 
-            val: stats.upcoming, 
-            icon: Calendar, 
-            color: 'bg-amber-600',
-            action: () => setActiveTab('students')
+            label: 'Overdue / At Risk', 
+            val: stats.delayed, 
+            icon: AlertTriangle, 
+            color: 'bg-red-500',
+            action: () => setActiveTab('students') 
           },
         ].map((stat, idx) => (
-          <div 
-            key={idx} 
-            onClick={stat.action}
-            className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 flex items-center justify-between hover:shadow-md transition-all cursor-pointer transform hover:-translate-y-1"
-          >
+          <div key={idx} onClick={stat.action} className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 flex items-center justify-between hover:shadow-md transition-all cursor-pointer transform hover:-translate-y-1">
             <div>
               <p className="text-gray-500 text-sm font-medium">{stat.label}</p>
               <h3 className="text-3xl font-bold text-gray-800 mt-1">{stat.val}</h3>
@@ -681,34 +655,26 @@ export default function App() {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          <div className="hidden md:block">
-            <FiltersBar />
-          </div>
+          <div className="hidden md:block"><FiltersBar /></div>
         </div>
-        
         <div className="flex gap-2 w-full md:w-auto">
-          <button 
-            onClick={() => openStudentModal()}
-            className="flex-shrink-0 flex items-center justify-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
-          >
+          <button onClick={() => openStudentModal()} className="flex-shrink-0 flex items-center justify-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm">
             <Plus size={18} className="mr-2" /> <span className="hidden sm:inline">Add Student</span><span className="sm:hidden">Add</span>
           </button>
         </div>
-        {/* Mobile Filters */}
-        <div className="md:hidden w-full">
-           <FiltersBar />
-        </div>
+        <div className="md:hidden w-full"><FiltersBar /></div>
       </div>
 
       <div className="grid gap-4">
         {activeStudents.map(student => {
           const programConfig = PROGRAM_STRUCTURE[student.program] || { stages: [], color: 'bg-gray-500' };
+          const durationStats = getDurationStats(student.joinedDate, student.program);
+          
           return (
             <div key={student.id} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
               <div className="p-4 sm:p-6 border-b border-gray-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div className="flex items-center gap-4">
-                  <div className={`h-12 w-12 rounded-lg flex items-center justify-center text-lg font-bold text-white shadow-sm
-                    ${programConfig.color}`}>
+                  <div className={`h-12 w-12 rounded-lg flex items-center justify-center text-lg font-bold text-white shadow-sm ${programConfig.color}`}>
                     {student.program}
                   </div>
                   <div>
@@ -721,29 +687,22 @@ export default function App() {
                         {student.supervisor}
                         {student.coSupervisor && <span className="text-gray-400 ml-1 text-xs"> (& {student.coSupervisor})</span>}
                       </span>
-                      {/* Duration Badge */}
+                      {/* Risk Badge with dynamic color */}
                       <span className="hidden sm:inline">•</span>
-                      <span className="flex items-center text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full text-xs font-medium">
+                      <span className={`flex items-center px-2 py-0.5 rounded-full text-xs font-medium 
+                        ${durationStats.status === 'critical' ? 'bg-red-100 text-red-700' : 
+                          durationStats.status === 'warning' ? 'bg-yellow-100 text-yellow-700' : 
+                          'bg-green-50 text-green-700'}`}>
                         <Clock3 size={12} className="mr-1"/> 
-                        {getDuration(student.joinedDate)}
+                        {durationStats.text}
                       </span>
                     </div>
                   </div>
                 </div>
                 <div className="flex gap-2 w-full sm:w-auto">
-                  <button 
-                    onClick={() => handleOpenIndividualReport(student)}
-                    className="flex-1 sm:flex-none px-3 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-200 flex items-center justify-center"
-                    title="Print Official Report"
-                  >
-                    <Printer size={16} />
-                  </button>
-                  <button onClick={() => openStudentModal(student)} className="flex-1 sm:flex-none px-3 py-2 text-sm font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200">
-                    Edit
-                  </button>
-                  <button onClick={() => handleDeleteStudent(student.id)} className="px-3 py-2 text-sm text-red-600 bg-red-50 hover:bg-red-100 rounded-lg border border-red-200">
-                    <Trash2 size={16} />
-                  </button>
+                  <button onClick={() => handleOpenIndividualReport(student)} className="flex-1 sm:flex-none px-3 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-200 flex items-center justify-center" title="Print Official Report"><Printer size={16} /></button>
+                  <button onClick={() => openStudentModal(student)} className="flex-1 sm:flex-none px-3 py-2 text-sm font-medium text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-lg border border-gray-200">Edit</button>
+                  <button onClick={() => handleDeleteStudent(student.id)} className="px-3 py-2 text-sm text-red-600 bg-red-50 hover:bg-red-100 rounded-lg border border-red-200"><Trash2 size={16} /></button>
                 </div>
               </div>
 
@@ -753,46 +712,22 @@ export default function App() {
                   {programConfig.stages.map((stage) => {
                     const data = student.progress[stage.id];
                     return (
-                      <div 
-                        key={stage.id} 
-                        onClick={() => openScheduleModal(student, stage.id)}
-                        className={`relative p-3 rounded-lg border cursor-pointer transition-all group
-                          ${data?.status === 'completed' ? 'bg-white border-green-200 hover:border-green-300' : 
-                            data?.status === 'scheduled' ? 'bg-white border-blue-200 hover:border-blue-300' : 
-                            'bg-gray-50 border-gray-200 border-dashed hover:border-gray-300 hover:bg-white'}`}
-                      >
+                      <div key={stage.id} onClick={() => openScheduleModal(student, stage.id)} className={`relative p-3 rounded-lg border cursor-pointer transition-all group ${data?.status === 'completed' ? 'bg-white border-green-200 hover:border-green-300' : data?.status === 'scheduled' ? 'bg-white border-blue-200 hover:border-blue-300' : 'bg-gray-50 border-gray-200 border-dashed hover:border-gray-300 hover:bg-white'}`}>
                         <div className="flex justify-between items-start mb-2">
                           <span className="text-xs font-semibold text-gray-700 truncate max-w-[80%]">{stage.label}</span>
                           {data?.status === 'completed' && <CheckCircle size={14} className="text-green-500" />}
                           {data?.status === 'scheduled' && <Clock size={14} className="text-blue-500" />}
                           {!data && <Plus size={14} className="text-gray-400 group-hover:text-indigo-500" />}
                         </div>
-                        
                         {data ? (
                           <div className="text-xs">
-                            {data.status === 'scheduled' && (
-                              <div className="text-blue-600 font-medium">{formatDate(data.date)}</div>
-                            )}
-                            {data.status === 'completed' && (
-                              <div className="text-green-600 font-medium">Done: {formatDate(data.date)}</div>
-                            )}
+                            {data.status === 'scheduled' && <div className="text-blue-600 font-medium">{formatDate(data.date)}</div>}
+                            {data.status === 'completed' && <div className="text-green-600 font-medium">Done: {formatDate(data.date)}</div>}
                             <div className="text-gray-400 mt-1 truncate">{data.venue || 'No venue'}</div>
                           </div>
-                        ) : (
-                          <div className="text-xs text-gray-400 italic py-1">Click to schedule</div>
-                        )}
-
+                        ) : <div className="text-xs text-gray-400 italic py-1">Click to schedule</div>}
                         {data?.docLink && (
-                          <a 
-                            href={data.docLink} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="absolute top-2 right-8 text-indigo-500 hover:bg-indigo-50 p-1 rounded-full transition-colors"
-                            title="Open Linked Document"
-                          >
-                            <Link size={14} />
-                          </a>
+                          <a href={data.docLink} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="absolute top-2 right-8 text-indigo-500 hover:bg-indigo-50 p-1 rounded-full transition-colors" title="Open Linked Document"><Link size={14} /></a>
                         )}
                       </div>
                     );
@@ -802,7 +737,6 @@ export default function App() {
             </div>
           );
         })}
-
         {activeStudents.length === 0 && (
           <div className="text-center py-12 bg-gray-50 rounded-xl border border-dashed border-gray-200">
             <Users size={48} className="mx-auto text-gray-300 mb-4" />
@@ -817,12 +751,15 @@ export default function App() {
   const AlumniView = () => (
     <div className="space-y-4">
       <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-4">
-        <div>
-          <h2 className="text-xl font-bold text-gray-800">Alumni Archive</h2>
-          <p className="text-gray-500">View graduated students or promote them to new programs.</p>
-        </div>
-        <div className="hidden md:block">
-           <FiltersBar />
+        <div><h2 className="text-xl font-bold text-gray-800">Alumni Archive</h2><p className="text-gray-500">View graduated students or promote them to new programs.</p></div>
+        
+        {/* NEW: Alumni Search & Filters */}
+        <div className="flex gap-2">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+            <input type="text" placeholder="Search alumni..." className="pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+          </div>
+          <div className="hidden md:block"><FiltersBar /></div>
         </div>
       </div>
 
@@ -830,38 +767,18 @@ export default function App() {
         {alumniStudents.map(student => (
           <div key={student.id} className="bg-gray-50 rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col md:flex-row justify-between items-center opacity-90 hover:opacity-100 transition-opacity">
             <div className="flex items-center gap-4 mb-4 md:mb-0">
-              <div className="h-12 w-12 bg-gray-300 rounded-lg flex items-center justify-center text-gray-600">
-                <GraduationCap size={24} />
-              </div>
+              <div className="h-12 w-12 bg-gray-300 rounded-lg flex items-center justify-center text-gray-600"><GraduationCap size={24} /></div>
               <div>
-                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                  {student.name}
-                  <span className="px-2 py-0.5 bg-gray-200 text-gray-600 text-xs rounded-full">Alumni</span>
-                </h3>
-                <div className="text-sm text-gray-500">
-                  {student.program} • {student.regNumber} • Graduated: {formatDate(student.graduationDate)}
-                </div>
+                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">{student.name}<span className="px-2 py-0.5 bg-gray-200 text-gray-600 text-xs rounded-full">Alumni</span></h3>
+                <div className="text-sm text-gray-500">{student.program} • {student.regNumber} • Graduated: {formatDate(student.graduationDate)}</div>
               </div>
             </div>
-            
             <div className="flex gap-2">
-              <button 
-                onClick={() => handleOpenIndividualReport(student)}
-                className="px-3 py-2 bg-white border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-all shadow-sm"
-                title="Print Final Transcript"
-              >
-                <Printer size={18} />
-              </button>
-              <button 
-                onClick={() => handlePromote(student)}
-                className="px-4 py-2 bg-white border border-indigo-200 text-indigo-700 rounded-lg hover:bg-indigo-50 hover:border-indigo-300 transition-all font-medium flex items-center shadow-sm"
-              >
-                <UserPlus size={18} className="mr-2" /> Start New Program
-              </button>
+              <button onClick={() => handleOpenIndividualReport(student)} className="px-3 py-2 bg-white border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-all shadow-sm" title="Print Final Transcript"><Printer size={18} /></button>
+              <button onClick={() => handlePromote(student)} className="px-4 py-2 bg-white border border-indigo-200 text-indigo-700 rounded-lg hover:bg-indigo-50 hover:border-indigo-300 transition-all font-medium flex items-center shadow-sm"><UserPlus size={18} className="mr-2" /> Start New Program</button>
             </div>
           </div>
         ))}
-
         {alumniStudents.length === 0 && (
           <div className="text-center py-12 bg-gray-50 rounded-xl border border-dashed border-gray-200">
             <Archive size={48} className="mx-auto text-gray-300 mb-4" />
@@ -879,43 +796,25 @@ export default function App() {
         <div>
           <h2 className="text-xl font-bold text-gray-800">Generate Reports</h2>
           <p className="text-gray-500">Export student data. Use the filters below to refine the report.</p>
-          <div className="mt-4">
-             <FiltersBar />
-          </div>
+          <div className="mt-4"><FiltersBar /></div>
         </div>
         <div className="flex gap-3">
-          <button onClick={exportToCSV} className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-sm">
-            <Download size={18} className="mr-2" /> Export Excel (CSV)
-          </button>
-          <button onClick={triggerPrint} className="flex items-center px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900 transition-colors shadow-sm">
-            <Printer size={18} className="mr-2" /> Print / Save PDF
-          </button>
+          <button onClick={exportToCSV} className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors shadow-sm"><Download size={18} className="mr-2" /> Export Excel (CSV)</button>
+          <button onClick={triggerPrint} className="flex items-center px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900 transition-colors shadow-sm"><Printer size={18} className="mr-2" /> Print / Save PDF</button>
         </div>
       </div>
-
       <div id="printable-area" className="bg-white p-8 shadow-sm border border-gray-200 rounded-xl">
         <div className="text-center mb-8 border-b border-gray-200 pb-6">
           <h1 className="text-3xl font-bold text-gray-900 uppercase tracking-wide">McPherson University</h1>
           <h2 className="text-xl font-bold text-indigo-900 uppercase mt-2">College of Computing</h2>
           <div className="w-24 h-1 bg-indigo-900 mx-auto my-4"></div>
           <h3 className="text-lg text-gray-600 font-medium uppercase tracking-widest">Postgraduate Student Progress Report</h3>
-          
           <div className="flex gap-3 justify-center mt-2">
-            {selectedSupervisor !== 'All Supervisors' && (
-               <p className="text-sm font-bold text-indigo-700 bg-indigo-50 inline-block px-3 py-1 rounded-full border border-indigo-100">
-                 Supervisor: {selectedSupervisor}
-               </p>
-            )}
-            {selectedProgram !== 'All Programs' && (
-               <p className="text-sm font-bold text-purple-700 bg-purple-50 inline-block px-3 py-1 rounded-full border border-purple-100">
-                 Program: {selectedProgram}
-               </p>
-            )}
+            {selectedSupervisor !== 'All Supervisors' && <p className="text-sm font-bold text-indigo-700 bg-indigo-50 inline-block px-3 py-1 rounded-full border border-indigo-100">Supervisor: {selectedSupervisor}</p>}
+            {selectedProgram !== 'All Programs' && <p className="text-sm font-bold text-purple-700 bg-purple-50 inline-block px-3 py-1 rounded-full border border-purple-100">Program: {selectedProgram}</p>}
           </div>
-          
           <p className="text-sm text-gray-400 mt-2">Generated on {new Date().toLocaleDateString()}</p>
         </div>
-
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead>
@@ -935,10 +834,7 @@ export default function App() {
                     <td className="py-3 px-2 font-medium">{s.regNumber}</td>
                     <td className="py-3 px-2 font-bold">{s.name}</td>
                     <td className="py-3 px-2">{s.program}</td>
-                    <td className="py-3 px-2">
-                      <div>{s.supervisor}</div>
-                      {s.coSupervisor && <div className="text-xs text-gray-500">Co: {s.coSupervisor}</div>}
-                    </td>
+                    <td className="py-3 px-2"><div>{s.supervisor}</div>{s.coSupervisor && <div className="text-xs text-gray-500">Co: {s.coSupervisor}</div>}</td>
                     <td className="py-3 px-2"><span className="px-2 py-1 bg-gray-200 rounded text-xs">{s.status}</span></td>
                     <td className="py-3 px-2 text-right font-bold">{calculateProgress(s)}%</td>
                   </tr>
@@ -946,13 +842,10 @@ export default function App() {
                   <tr className="print:table-row hidden">
                     <td colSpan="6" className="py-2 px-4 pb-4">
                       <div className="grid grid-cols-4 gap-2 text-xs text-gray-500">
-                        {/* SAFE ACCESS to stages */}
                         {(PROGRAM_STRUCTURE[s.program]?.stages || []).map(stage => {
                           const p = s.progress[stage.id];
                           return (
-                            <div key={stage.id} className="border p-1 rounded">
-                              <strong>{stage.label}:</strong> {p ? `${p.status.toUpperCase()} (${formatDate(p.date)})` : 'Pending'}
-                            </div>
+                            <div key={stage.id} className="border p-1 rounded"><strong>{stage.label}:</strong> {p ? `${p.status.toUpperCase()} (${formatDate(p.date)})` : 'Pending'}</div>
                           )
                         })}
                       </div>
@@ -960,45 +853,24 @@ export default function App() {
                   </tr>
                 </React.Fragment>
               ))}
-              {filteredStudents.length === 0 && (
-                <tr>
-                  <td colSpan="6" className="text-center py-8 text-gray-400">No students found.</td>
-                </tr>
-              )}
+              {filteredStudents.length === 0 && <tr><td colSpan="6" className="text-center py-8 text-gray-400">No students found.</td></tr>}
             </tbody>
           </table>
         </div>
-        
-        <div className="mt-12 pt-8 border-t border-gray-200 flex justify-between text-sm text-gray-500">
-          <div>Dean, College of Computing</div>
-          <div>PG Coordinator</div>
-        </div>
+        <div className="mt-12 pt-8 border-t border-gray-200 flex justify-between text-sm text-gray-500"><div>Dean, College of Computing</div><div>PG Coordinator</div></div>
       </div>
     </div>
   );
 
   const IndividualReportView = () => {
     if (!reportStudent) return null;
-    
     return (
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="flex justify-between items-center no-print bg-white p-4 rounded-xl shadow-sm border border-gray-100">
-          <button 
-            onClick={() => setActiveTab('students')}
-            className="flex items-center text-gray-600 hover:text-indigo-600 transition-colors"
-          >
-            <ArrowLeft size={18} className="mr-2" /> Back to List
-          </button>
-          <button 
-            onClick={triggerPrint} 
-            className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
-          >
-            <Printer size={18} className="mr-2" /> Print Official Report
-          </button>
+          <button onClick={() => setActiveTab('students')} className="flex items-center text-gray-600 hover:text-indigo-600 transition-colors"><ArrowLeft size={18} className="mr-2" /> Back to List</button>
+          <button onClick={triggerPrint} className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"><Printer size={18} className="mr-2" /> Print Official Report</button>
         </div>
-
         <div id="printable-area" className="bg-white p-12 shadow-md border border-gray-200 rounded-none print:shadow-none print:border-none min-h-[1000px]">
-          {/* Header */}
           <div className="text-center mb-10 border-b-2 border-gray-800 pb-6">
             <h1 className="text-3xl font-bold text-gray-900 uppercase tracking-widest mb-2">McPherson University</h1>
             <h2 className="text-xl font-bold text-indigo-900 uppercase">College of Computing</h2>
@@ -1006,49 +878,23 @@ export default function App() {
             <h3 className="text-lg font-bold text-gray-700 uppercase tracking-wide">Individual Student Progress Report</h3>
             <p className="text-sm text-gray-500 mt-1">{new Date().toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
           </div>
-
-          {/* Student Details Grid */}
           <div className="grid grid-cols-2 gap-8 mb-10 text-sm">
             <div className="space-y-4">
-              <div>
-                <p className="text-gray-500 uppercase text-xs font-semibold tracking-wider">Student Name</p>
-                <p className="text-lg font-bold text-gray-900">{reportStudent.name}</p>
-              </div>
-              <div>
-                <p className="text-gray-500 uppercase text-xs font-semibold tracking-wider">Registration Number</p>
-                <p className="text-lg font-medium text-gray-900">{reportStudent.regNumber}</p>
-              </div>
-              <div>
-                <p className="text-gray-500 uppercase text-xs font-semibold tracking-wider">Program</p>
-                <p className="text-lg font-bold text-gray-900">Computer Science ({reportStudent.program})</p>
-              </div>
+              <div><p className="text-gray-500 uppercase text-xs font-semibold tracking-wider">Student Name</p><p className="text-lg font-bold text-gray-900">{reportStudent.name}</p></div>
+              <div><p className="text-gray-500 uppercase text-xs font-semibold tracking-wider">Registration Number</p><p className="text-lg font-medium text-gray-900">{reportStudent.regNumber}</p></div>
+              <div><p className="text-gray-500 uppercase text-xs font-semibold tracking-wider">Program</p><p className="text-lg font-bold text-gray-900">Computer Science ({reportStudent.program})</p></div>
             </div>
             <div className="space-y-4">
-              <div>
-                <p className="text-gray-500 uppercase text-xs font-semibold tracking-wider">Supervisor</p>
-                <p className="text-lg font-medium text-gray-900">{reportStudent.supervisor}</p>
-              </div>
-              <div>
-                <p className="text-gray-500 uppercase text-xs font-semibold tracking-wider">Co-Supervisor</p>
-                <p className="text-lg font-medium text-gray-900">{reportStudent.coSupervisor || 'N/A'}</p>
-              </div>
-              <div>
-                <p className="text-gray-500 uppercase text-xs font-semibold tracking-wider">Duration in Program</p>
-                <p className="text-lg font-medium text-gray-900">{getDuration(reportStudent.joinedDate)}</p>
-              </div>
+              <div><p className="text-gray-500 uppercase text-xs font-semibold tracking-wider">Supervisor</p><p className="text-lg font-medium text-gray-900">{reportStudent.supervisor}</p></div>
+              <div><p className="text-gray-500 uppercase text-xs font-semibold tracking-wider">Co-Supervisor</p><p className="text-lg font-medium text-gray-900">{reportStudent.coSupervisor || 'N/A'}</p></div>
+              <div><p className="text-gray-500 uppercase text-xs font-semibold tracking-wider">Duration in Program</p><p className="text-lg font-medium text-gray-900">{getDuration(reportStudent.joinedDate)}</p></div>
             </div>
           </div>
-
-          {/* Detailed Progress Table */}
           <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4 border-b pb-2">Academic Presentation History</h4>
           <table className="w-full text-left text-sm mb-12 border-collapse">
             <thead>
               <tr className="bg-gray-50">
-                <th className="border p-3 font-bold text-gray-700">Presentation Stage</th>
-                <th className="border p-3 font-bold text-gray-700">Date</th>
-                <th className="border p-3 font-bold text-gray-700">Status</th>
-                <th className="border p-3 font-bold text-gray-700">Score</th>
-                <th className="border p-3 font-bold text-gray-700">Remarks</th>
+                <th className="border p-3 font-bold text-gray-700">Presentation Stage</th><th className="border p-3 font-bold text-gray-700">Date</th><th className="border p-3 font-bold text-gray-700">Status</th><th className="border p-3 font-bold text-gray-700">Score</th><th className="border p-3 font-bold text-gray-700">Remarks</th>
               </tr>
             </thead>
             <tbody>
@@ -1058,13 +904,7 @@ export default function App() {
                   <tr key={stage.id} className="">
                     <td className="border p-3 font-medium">{stage.label}</td>
                     <td className="border p-3">{p ? formatDate(p.date) : '-'}</td>
-                    <td className="border p-3">
-                      {p ? (
-                        <span className={`px-2 py-1 rounded text-xs font-bold ${p.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
-                          {p.status.toUpperCase()}
-                        </span>
-                      ) : <span className="text-gray-400">PENDING</span>}
-                    </td>
+                    <td className="border p-3">{p ? (<span className={`px-2 py-1 rounded text-xs font-bold ${p.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>{p.status.toUpperCase()}</span>) : <span className="text-gray-400">PENDING</span>}</td>
                     <td className="border p-3 font-bold">{p?.score || '-'}</td>
                     <td className="border p-3 text-gray-600 italic">{p?.remarks || '-'}</td>
                   </tr>
@@ -1072,19 +912,9 @@ export default function App() {
               })}
             </tbody>
           </table>
-
-          {/* Signature Section */}
           <div className="mt-20 grid grid-cols-2 gap-12 pt-8 border-t border-gray-200">
-            <div className="text-center">
-              <div className="h-16 border-b border-gray-400 mb-2"></div>
-              <p className="font-bold text-gray-900">PG Coordinator</p>
-              <p className="text-xs text-gray-500">Signature & Date</p>
-            </div>
-            <div className="text-center">
-              <div className="h-16 border-b border-gray-400 mb-2"></div>
-              <p className="font-bold text-gray-900">Dean, College of Computing</p>
-              <p className="text-xs text-gray-500">Signature & Date</p>
-            </div>
+            <div className="text-center"><div className="h-16 border-b border-gray-400 mb-2"></div><p className="font-bold text-gray-900">PG Coordinator</p><p className="text-xs text-gray-500">Signature & Date</p></div>
+            <div className="text-center"><div className="h-16 border-b border-gray-400 mb-2"></div><p className="font-bold text-gray-900">Dean, College of Computing</p><p className="text-xs text-gray-500">Signature & Date</p></div>
           </div>
         </div>
       </div>
@@ -1097,76 +927,20 @@ export default function App() {
         <h2 className="text-xl font-bold text-gray-800 mb-2">System Settings & Data Management</h2>
         <p className="text-gray-500">Manage your application data locally. Ensure you backup regularly.</p>
       </div>
-
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* Backup Card */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between h-full">
-          <div>
-            <div className="w-12 h-12 bg-indigo-50 rounded-lg flex items-center justify-center text-indigo-600 mb-4">
-              <Save size={24} />
-            </div>
-            <h3 className="text-lg font-bold text-gray-900 mb-2">Backup Data</h3>
-            <p className="text-gray-500 text-sm mb-6">
-              Download a complete copy of your student database as a JSON file. 
-              Save this file to your computer or cloud storage to prevent data loss.
-            </p>
-          </div>
-          <button 
-            onClick={handleExportData}
-            className="w-full py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium flex items-center justify-center gap-2"
-          >
-            <Download size={18} /> Download Backup
-          </button>
+          <div><div className="w-12 h-12 bg-indigo-50 rounded-lg flex items-center justify-center text-indigo-600 mb-4"><Save size={24} /></div><h3 className="text-lg font-bold text-gray-900 mb-2">Backup Data</h3><p className="text-gray-500 text-sm mb-6">Download a complete copy of your student database as a JSON file.</p></div>
+          <button onClick={handleExportData} className="w-full py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium flex items-center justify-center gap-2"><Download size={18} /> Download Backup</button>
         </div>
-
-        {/* Restore Card */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between h-full">
-          <div>
-            <div className="w-12 h-12 bg-amber-50 rounded-lg flex items-center justify-center text-amber-600 mb-4">
-              <Upload size={24} />
-            </div>
-            <h3 className="text-lg font-bold text-gray-900 mb-2">Restore Data</h3>
-            <p className="text-gray-500 text-sm mb-6">
-              Upload a previously saved backup file to restore your student records.
-              <span className="block mt-2 text-red-500 font-medium text-xs bg-red-50 p-2 rounded">
-                Warning: This will overwrite your current data.
-              </span>
-            </p>
-          </div>
-          <input 
-            type="file" 
-            ref={fileInputRef} 
-            onChange={handleImportFile} 
-            accept=".json" 
-            className="hidden" 
-          />
-          <button 
-            onClick={handleImportClick}
-            className="w-full py-3 bg-white border-2 border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-all font-medium flex items-center justify-center gap-2"
-          >
-            <Upload size={18} /> Restore from File
-          </button>
+          <div><div className="w-12 h-12 bg-amber-50 rounded-lg flex items-center justify-center text-amber-600 mb-4"><Upload size={24} /></div><h3 className="text-lg font-bold text-gray-900 mb-2">Restore Data</h3><p className="text-gray-500 text-sm mb-6">Upload a previously saved backup file to restore your student records. <span className="block mt-2 text-red-500 font-medium text-xs bg-red-50 p-2 rounded">Warning: This will overwrite your current data.</span></p></div>
+          <input type="file" ref={fileInputRef} onChange={handleImportFile} accept=".json" className="hidden" />
+          <button onClick={handleImportClick} className="w-full py-3 bg-white border-2 border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-all font-medium flex items-center justify-center gap-2"><Upload size={18} /> Restore from File</button>
         </div>
-
-        {/* Bulk Import Card - Changed icon from FileSpreadsheet to FileText to fix crash */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between h-full">
-          <div>
-            <div className="w-12 h-12 bg-emerald-50 rounded-lg flex items-center justify-center text-emerald-600 mb-4">
-              <FileText size={24} />
-            </div>
-            <h3 className="text-lg font-bold text-gray-900 mb-2">Bulk Import (CSV)</h3>
-            <p className="text-gray-500 text-sm mb-6">
-              Import multiple students from an Excel/CSV file. 
-              <span className="text-emerald-600 cursor-pointer underline ml-1" onClick={handleDownloadTemplate}>Download Template</span>
-            </p>
-          </div>
+          <div><div className="w-12 h-12 bg-emerald-50 rounded-lg flex items-center justify-center text-emerald-600 mb-4"><FileText size={24} /></div><h3 className="text-lg font-bold text-gray-900 mb-2">Bulk Import (CSV)</h3><p className="text-gray-500 text-sm mb-6">Import multiple students from an Excel/CSV file. <span className="text-emerald-600 cursor-pointer underline ml-1" onClick={handleDownloadTemplate}>Download Template</span></p></div>
           <input type="file" ref={csvInputRef} onChange={handleBulkCSVUpload} accept=".csv" className="hidden" />
-          <button 
-            onClick={handleCSVUploadClick}
-            className="w-full py-3 bg-white border-2 border-emerald-200 text-emerald-700 rounded-lg hover:bg-emerald-50 transition-all font-medium flex items-center justify-center gap-2"
-          >
-            <Upload size={18} /> Import Students
-          </button>
+          <button onClick={handleCSVUploadClick} className="w-full py-3 bg-white border-2 border-emerald-200 text-emerald-700 rounded-lg hover:bg-emerald-50 transition-all font-medium flex items-center justify-center gap-2"><Upload size={18} /> Import Students</button>
         </div>
       </div>
     </div>
