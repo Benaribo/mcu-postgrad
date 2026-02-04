@@ -531,7 +531,7 @@ export default function App() {
         </div>
       </div>
       <div className="bg-white p-6 rounded-xl border border-gray-100">
-        <h3 className="font-bold mb-4 flex items-center gap-2"><FileText size={20}/> Bulk Import</h3>
+        <h3 className="font-bold mb-4 flex items-center gap-2"><Plus size={20}/> Bulk Import</h3>
         <p className="text-sm text-gray-500 mb-4">Import students from CSV.</p>
         <button onClick={handleDownloadTemplate} className="text-indigo-600 text-sm mb-4 block underline">Download Template</button>
         <input type="file" ref={csvInputRef} onChange={handleBulkCSVUpload} className="hidden" />
@@ -550,7 +550,7 @@ export default function App() {
             <button key={m.id} onClick={() => setActiveTab(m.id)} className={`w-full flex items-center px-4 py-3 rounded-xl transition-all ${activeTab === m.id ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-500 hover:bg-gray-50'}`}><m.i size={20} className="mr-3"/> {m.l}</button>
           ))}
         </nav>
-        <div className="p-4 border-t"><div className="bg-indigo-900 rounded-xl p-4 text-white"><p className="text-xs text-indigo-200 font-semibold">Current User</p><p className="truncate">Admin</p></div></div>
+        <div className="p-4 border-t"><div className="bg-indigo-900 rounded-xl p-4 text-white"><p className="text-xs text-indigo-200 font-semibold">User</p><p className="truncate">Admin</p></div></div>
       </div>
       <main className="md:ml-64 min-h-screen p-8">
         {activeTab === 'dashboard' && <DashboardView />}
