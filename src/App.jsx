@@ -39,7 +39,9 @@ import {
   Shield
 } from 'lucide-react';
 
-// --- CONFIGURATION ---
+/**
+ * CONFIGURATION & CONSTANTS
+ */
 const PROGRAM_STRUCTURE = {
   PGD: { label: "Post Graduate Diploma (PGD)", stages: [{ id: 'final', label: 'Final Project Defense' }], color: 'bg-emerald-500', maxMonths: 18 },
   MSc: { label: "Master of Science (MSc)", stages: [{ id: 'predata', label: 'Pre-Data Seminar' }, { id: 'postdata', label: 'Post-Data Seminar' }], color: 'bg-blue-500', maxMonths: 24 },
@@ -47,7 +49,7 @@ const PROGRAM_STRUCTURE = {
   PhD: { label: "Doctor of Philosophy (PhD)", stages: [{ id: 'proposal', label: 'Proposal Defense' }, { id: 'predata', label: 'Pre-Data Seminar' }, { id: 'postdata', label: 'Post-Data Seminar' }, { id: 'viva', label: 'Viva Voce' }], color: 'bg-purple-600', maxMonths: 48 }
 };
 
-const DEFAULT_STRUCTURE = { label: "Unknown Program", stages: [], color: 'bg-gray-500', maxMonths: 24 };
+const DEFAULT_STRUCTURE = { label: "Unknown", stages: [], color: 'bg-gray-500', maxMonths: 24 };
 
 const INITIAL_STUDENTS = [
   { id: '1', name: 'John Doe', regNumber: 'PG/2023/001', email: 'john.doe@university.edu.ng', program: 'PhD', supervisor: 'Dr. A. Smith', coSupervisor: 'Prof. K. Mensah', status: 'Active', joinedDate: '2023-01-15', progress: { proposal: { status: 'completed', date: '2023-06-10', score: 'A', remarks: 'Excellent work', docLink: 'https://google.com' }, predata: { status: 'scheduled', date: '2024-03-20', venue: 'Hall 3' } } }
@@ -57,7 +59,9 @@ const INITIAL_STAFF = [
   { id: 's1', name: 'Dr. A. Smith', email: 'a.smith@mcu.edu.ng', department: 'Computer Science', password: 'staff' }
 ];
 
-// --- HELPER FUNCTIONS ---
+/**
+ * HELPER FUNCTIONS (Safe Versions)
+ */
 const generateId = () => Math.random().toString(36).substr(2, 9);
 const formatDate = (dateString) => {
   if (!dateString) return '-';
@@ -184,7 +188,7 @@ export default function App() {
   const [staff, setStaff] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('pg_staff'));
-      return Array.isArray(saved) ? saved : INITIAL_STAFF;
+      return Array.isArray(saved) ? saved.filter(s => s && s.name) : INITIAL_STAFF;
     } catch { return INITIAL_STAFF; }
   });
   
@@ -236,8 +240,12 @@ export default function App() {
 
   const uniqueSupervisors = useMemo(() => {
     const sups = new Set();
-    staff.forEach(s => sups.add(s.name.trim()));
-    students.forEach(s => { if(s.supervisor) sups.add(s.supervisor.trim()); if(s.coSupervisor) sups.add(s.coSupervisor.trim()); });
+    // SAFE ACCESS to properties
+    staff.forEach(s => s && s.name && sups.add(s.name.trim()));
+    students.forEach(s => { 
+      if(s && s.supervisor) sups.add(s.supervisor.trim()); 
+      if(s && s.coSupervisor) sups.add(s.coSupervisor.trim()); 
+    });
     return ['All Supervisors', ...Array.from(sups).sort()];
   }, [staff, students]);
 
@@ -247,7 +255,7 @@ export default function App() {
       const search = (s.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || (s.regNumber || '').toLowerCase().includes(searchTerm.toLowerCase());
       let role = true;
       if (currentUser?.role === 'staff') role = s.supervisor === currentUser.name || s.coSupervisor === currentUser.name;
-      else role = selectedSupervisor === 'All Supervisors' || s.supervisor === selectedSupervisor || s.coSupervisor === selectedSupervisor;
+      else role = selectedSupervisor === 'All Supervisors' || (s.supervisor === selectedSupervisor) || (s.coSupervisor === selectedSupervisor);
       const prog = selectedProgram === 'All Programs' || s.program === selectedProgram;
       return search && role && prog;
     });
@@ -257,12 +265,12 @@ export default function App() {
   const alumniStudents = useMemo(() => filteredStudents.filter(s => s.status === 'Alumni'), [filteredStudents]);
 
   const stats = useMemo(() => {
-    const active = students.filter(s => s.status !== 'Alumni');
+    const active = students.filter(s => s && s.status !== 'Alumni');
     return {
       total: active.length,
       phd: active.filter(s => s.program === 'PhD').length,
       msc: active.filter(s => s.program === 'MSc').length,
-      alumni: students.filter(s => s.status === 'Alumni').length,
+      alumni: students.filter(s => s && s.status === 'Alumni').length,
       delayed: active.filter(s => getDurationStats(s.joinedDate, s.program).status === 'critical').length,
       upcoming: active.reduce((acc, curr) => acc + Object.values(curr.progress || {}).filter(p => p.status === 'scheduled').length, 0)
     };
@@ -281,7 +289,7 @@ export default function App() {
   // --- ACTIONS ---
   const handleAddStudent = (e) => {
     e.preventDefault();
-    if (!selectedStudent && students.some(s => s.regNumber === studentForm.regNumber.trim())) { alert('Reg Number exists.'); return; }
+    if (!selectedStudent && students.some(s => s && s.regNumber === studentForm.regNumber.trim())) { alert('Reg Number exists.'); return; }
     if (selectedStudent) setStudents(prev => prev.map(s => s.id === selectedStudent.id ? { ...s, ...studentForm } : s));
     else setStudents(prev => [...prev, { ...studentForm, id: generateId(), progress: {}, status: 'Active' }]);
     setIsStudentModalOpen(false);
@@ -507,6 +515,27 @@ export default function App() {
     </div>
   );
 
+  const AlumniView = () => (
+    <div className="space-y-4">
+      <div className="flex justify-between bg-white p-4 rounded-xl border border-gray-100">
+         <h2 className="font-bold text-gray-800">Alumni Archive</h2>
+         <FiltersBar />
+      </div>
+      <div className="grid gap-4">
+        {alumniStudents.map(s => (
+          <div key={s.id} className="bg-gray-50 p-4 rounded-xl border flex justify-between items-center">
+            <div><h3 className="font-bold">{s.name}</h3><p className="text-sm text-gray-500">{s.program} • {s.regNumber} • {formatDate(s.graduationDate)}</p></div>
+            <div className="flex gap-2">
+              <button onClick={() => { setReportStudent(s); setActiveTab('report_single'); }} className="p-2 bg-white border rounded hover:bg-gray-100"><Printer size={16}/></button>
+              <button onClick={() => handlePromote(s)} className="px-3 py-1 bg-white border border-indigo-200 text-indigo-700 rounded text-sm hover:bg-indigo-50">Promote</button>
+            </div>
+          </div>
+        ))}
+        {alumniStudents.length === 0 && <div className="p-8 text-center text-gray-500">No Alumni Records</div>}
+      </div>
+    </div>
+  );
+
   const SettingsView = () => (
     <div className="grid gap-6 md:grid-cols-2">
       <div className="bg-white p-6 rounded-xl border border-gray-100">
@@ -579,8 +608,8 @@ export default function App() {
               </div>
               <input type="email" placeholder="Email" className="p-2 border rounded w-full" value={studentForm.email} onChange={e => setStudentForm({...studentForm, email: e.target.value})} />
               <div className="grid grid-cols-2 gap-4">
-                <select className="p-2 border rounded" value={studentForm.supervisor} onChange={e => setStudentForm({...studentForm, supervisor: e.target.value})}><option value="">Select Supervisor</option>{staff.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select>
-                <select className="p-2 border rounded" value={studentForm.coSupervisor} onChange={e => setStudentForm({...studentForm, coSupervisor: e.target.value})}><option value="">Select Co-Supervisor</option>{staff.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}</select>
+                <select className="p-2 border rounded" value={studentForm.supervisor} onChange={e => setStudentForm({...studentForm, supervisor: e.target.value})}><option value="">Select Supervisor</option>{uniqueSupervisors.filter(x => x !== 'All Supervisors').map(s => <option key={s} value={s}>{s}</option>)}</select>
+                <select className="p-2 border rounded" value={studentForm.coSupervisor} onChange={e => setStudentForm({...studentForm, coSupervisor: e.target.value})}><option value="">Select Co-Supervisor</option>{uniqueSupervisors.filter(x => x !== 'All Supervisors').map(s => <option key={s} value={s}>{s}</option>)}</select>
               </div>
               <div className="flex justify-end gap-2 mt-4"><button type="button" onClick={() => setIsStudentModalOpen(false)} className="px-4 py-2 text-gray-600">Cancel</button><button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded">Save</button></div>
             </form>
@@ -609,7 +638,7 @@ export default function App() {
                 </>
               )}
               <div className="flex justify-between mt-4">
-                {selectedStudent && selectedStageId === (PROGRAM_STRUCTURE[selectedStudent.program].stages[PROGRAM_STRUCTURE[selectedStudent.program].stages.length - 1] || {}).id && scheduleForm.status === 'completed' ? <button type="button" onClick={() => handleGraduate(selectedStudent)} className="px-4 py-2 bg-emerald-600 text-white rounded">Graduate Student</button> : <div />}
+                {selectedStudent && selectedStageId === (PROGRAM_STRUCTURE[selectedStudent.program]?.stages[PROGRAM_STRUCTURE[selectedStudent.program]?.stages.length - 1] || {}).id && scheduleForm.status === 'completed' ? <button type="button" onClick={() => handleGraduate(selectedStudent)} className="px-4 py-2 bg-emerald-600 text-white rounded">Graduate Student</button> : <div />}
                 <div className="flex gap-2"><button type="button" onClick={() => setIsScheduleModalOpen(false)} className="px-4 py-2 text-gray-600">Cancel</button><button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded">Save</button></div>
               </div>
             </form>
