@@ -32,7 +32,11 @@ import {
   Archive,
   UserPlus,
   ArrowLeft,
-  AlertTriangle
+  AlertTriangle,
+  Lock,
+  LogOut,
+  Key,
+  Shield
 } from 'lucide-react';
 
 /**
@@ -45,11 +49,16 @@ const PROGRAM_STRUCTURE = {
   PhD: { label: "Doctor of Philosophy (PhD)", stages: [{ id: 'proposal', label: 'Proposal Defense' }, { id: 'predata', label: 'Pre-Data Seminar' }, { id: 'postdata', label: 'Post-Data Seminar' }, { id: 'viva', label: 'Viva Voce' }], color: 'bg-purple-600', maxMonths: 48 }
 };
 
-const DEFAULT_STRUCTURE = { label: "Unknown", stages: [], color: 'bg-gray-500', maxMonths: 24 };
+const DEFAULT_STRUCTURE = { label: "Unknown Program", stages: [], color: 'bg-gray-500', maxMonths: 24 };
 
 const INITIAL_STUDENTS = [
   { id: '1', name: 'John Doe', regNumber: 'PG/2023/001', email: 'john.doe@university.edu.ng', program: 'PhD', supervisor: 'Dr. A. Smith', coSupervisor: 'Prof. K. Mensah', status: 'Active', joinedDate: '2023-01-15', progress: { proposal: { status: 'completed', date: '2023-06-10', score: 'A', remarks: 'Excellent work', docLink: 'https://google.com' }, predata: { status: 'scheduled', date: '2024-03-20', venue: 'Hall 3' } } },
   { id: '2', name: 'Jane Ubong', regNumber: 'PG/2024/055', email: 'jane.ubong@university.edu.ng', program: 'MSc', supervisor: 'Prof. B. Johnson', coSupervisor: '', status: 'Active', joinedDate: '2024-02-01', progress: {} }
+];
+
+const INITIAL_STAFF = [
+  { id: 's1', name: 'Dr. A. Smith', email: 'a.smith@mcu.edu.ng', department: 'Computer Science', password: 'staff' },
+  { id: 's2', name: 'Prof. B. Johnson', email: 'b.johnson@mcu.edu.ng', department: 'Computer Science', password: 'staff' }
 ];
 
 /**
@@ -80,7 +89,7 @@ const getDurationStats = (dateString, program) => {
     let status = 'good';
     if (diffMonths > limit) status = 'critical';
     else if (diffMonths > limit - 6) status = 'warning';
-    return { text: `${(diffMonths / 12).toFixed(1)} yrs`, status };
+    return { text: `${(diffMonths / 12).toFixed(1)} yrs`, status, rawMonths: diffMonths };
   } catch(e) { return { text: '', status: 'neutral' }; }
 };
 const calculateProgress = (student) => {
@@ -93,7 +102,7 @@ const calculateProgress = (student) => {
 
 // --- CHART COMPONENTS ---
 const SimpleBarChart = ({ data, color }) => {
-  const max = Math.max(...data.map(d => d.value), 1);
+  const max = Math.max(...data.map(d => d.value), 1) || 1;
   return (
     <div className="flex items-end h-32 gap-2 w-full pt-4">
       {data.map((d, i) => (
@@ -124,15 +133,65 @@ const SimpleDonutChart = ({ data }) => {
   );
 };
 
+// --- LOGIN VIEW ---
+const LoginView = ({ onLogin, verifyCredentials }) => {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const user = verifyCredentials(username, password);
+    if (user) onLogin(user);
+    else setError('Invalid credentials.');
+  };
+
+  const handleReset = () => {
+    if (confirm('Reset Admin password to default (password123)? Data remains safe.')) {
+      localStorage.removeItem('pg_auth_config');
+      window.location.reload();
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 font-sans">
+      <div className="bg-white max-w-md w-full rounded-2xl shadow-xl overflow-hidden">
+        <div className="bg-gradient-to-r from-indigo-900 to-purple-800 p-8 text-center">
+          <div className="w-16 h-16 bg-white/20 rounded-xl flex items-center justify-center mx-auto mb-4 backdrop-blur-sm"><GraduationCap size={32} className="text-white" /></div>
+          <h1 className="text-2xl font-bold text-white tracking-wide">McPherson University</h1>
+          <p className="text-indigo-200 text-sm mt-1">Postgraduate Management Portal</p>
+        </div>
+        <div className="p-8">
+          <h2 className="text-xl font-bold text-gray-800 mb-6 text-center">Secure Access</h2>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">Username / Email</label><input type="text" required className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" value={username} onChange={(e) => setUsername(e.target.value)} /></div>
+            <div><label className="block text-sm font-medium text-gray-700 mb-1">Password</label><input type="password" required className="w-full p-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none" value={password} onChange={(e) => setPassword(e.target.value)} /></div>
+            {error && <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg flex items-center"><AlertCircle size={16} className="mr-2" /> {error}</div>}
+            <button type="submit" className="w-full py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-bold shadow-md mt-2">Login</button>
+          </form>
+          <div className="mt-6 text-center text-xs text-gray-400 space-y-1"><p><strong>Admin Default:</strong> admin / password123</p><button onClick={handleReset} type="button" className="text-indigo-400 hover:text-indigo-600 underline mt-4">Reset Admin Credentials</button></div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 /**
  * MAIN APP COMPONENT
  */
 export default function App() {
+  const [currentUser, setCurrentUser] = useState(() => JSON.parse(sessionStorage.getItem('pg_current_user')) || null);
   const [students, setStudents] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('pg_students'));
       return Array.isArray(saved) ? saved.filter(s => s && s.id) : INITIAL_STUDENTS;
     } catch { return INITIAL_STUDENTS; }
+  });
+  const [staff, setStaff] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('pg_staff'));
+      return Array.isArray(saved) ? saved.filter(s => s && s.name) : INITIAL_STAFF;
+    } catch { return INITIAL_STAFF; }
   });
   
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -140,38 +199,68 @@ export default function App() {
   const [selectedProgram, setSelectedProgram] = useState('All Programs');
   
   const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
+  const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
+  const [selectedStaff, setSelectedStaff] = useState(null);
   const [reportStudent, setReportStudent] = useState(null);
   const [selectedStageId, setSelectedStageId] = useState(null);
   
   const [studentForm, setStudentForm] = useState({ name: '', regNumber: '', email: '', program: 'PhD', supervisor: '', coSupervisor: '', joinedDate: '' });
+  const [staffForm, setStaffForm] = useState({ name: '', email: '', department: 'Computer Science', password: 'staff' });
   const [scheduleForm, setScheduleForm] = useState({ date: '', time: '', venue: '', status: 'scheduled', score: '', remarks: '', docLink: '' });
-  
+  const [adminConfig, setAdminConfig] = useState(() => JSON.parse(localStorage.getItem('pg_auth_config')) || { username: 'admin', password: 'password123' });
+  const [newPassword, setNewPassword] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+
   const fileInputRef = useRef(null);
   const csvInputRef = useRef(null);
 
   useEffect(() => { localStorage.setItem('pg_students', JSON.stringify(students)); }, [students]);
+  useEffect(() => { localStorage.setItem('pg_staff', JSON.stringify(staff)); }, [staff]);
+  useEffect(() => { sessionStorage.setItem('pg_current_user', JSON.stringify(currentUser)); }, [currentUser]);
+
+  // --- LOGIC ---
+  const verifyCredentials = (u, p) => {
+    if (u === adminConfig.username && p === adminConfig.password) return { name: 'Administrator', role: 'admin' };
+    const s = staff.find(st => st.email.toLowerCase() === u.toLowerCase() && st.password === p);
+    if (s) return { name: s.name, role: 'staff', email: s.email };
+    return null;
+  };
+
+  const handleLogout = () => { setCurrentUser(null); setActiveTab('dashboard'); sessionStorage.removeItem('pg_current_user'); };
+
+  const handleUpdateAdminPassword = (e) => {
+    e.preventDefault();
+    if (newPassword.length < 4) { alert("Password too short"); return; }
+    const nc = { ...adminConfig, password: newPassword };
+    setAdminConfig(nc);
+    localStorage.setItem('pg_auth_config', JSON.stringify(nc));
+    setNewPassword('');
+    alert("Updated!");
+  };
 
   const uniqueSupervisors = useMemo(() => {
     const sups = new Set();
+    staff.forEach(s => s && s.name && sups.add(s.name.trim()));
     students.forEach(s => { 
       if(s && s.supervisor) sups.add(s.supervisor.trim()); 
       if(s && s.coSupervisor) sups.add(s.coSupervisor.trim()); 
     });
     return ['All Supervisors', ...Array.from(sups).sort()];
-  }, [students]);
+  }, [staff, students]);
 
   const filteredStudents = useMemo(() => {
     return students.filter(s => {
       if (!s) return false;
       const search = (s.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || (s.regNumber || '').toLowerCase().includes(searchTerm.toLowerCase());
-      const role = selectedSupervisor === 'All Supervisors' || (s.supervisor && String(s.supervisor).trim() === selectedSupervisor) || (s.coSupervisor && String(s.coSupervisor).trim() === selectedSupervisor);
+      let role = true;
+      if (currentUser?.role === 'staff') role = s.supervisor === currentUser.name || s.coSupervisor === currentUser.name;
+      else role = selectedSupervisor === 'All Supervisors' || (s.supervisor === selectedSupervisor) || (s.coSupervisor === selectedSupervisor);
       const prog = selectedProgram === 'All Programs' || s.program === selectedProgram;
       return search && role && prog;
     });
-  }, [students, searchTerm, selectedSupervisor, selectedProgram]);
+  }, [students, searchTerm, selectedSupervisor, selectedProgram, currentUser]);
 
   const activeStudents = useMemo(() => filteredStudents.filter(s => s.status !== 'Alumni'), [filteredStudents]);
   const alumniStudents = useMemo(() => filteredStudents.filter(s => s.status === 'Alumni'), [filteredStudents]);
@@ -205,8 +294,16 @@ export default function App() {
     if (selectedStudent) setStudents(prev => prev.map(s => s.id === selectedStudent.id ? { ...s, ...studentForm } : s));
     else setStudents(prev => [...prev, { ...studentForm, id: generateId(), progress: {}, status: 'Active' }]);
     setIsStudentModalOpen(false);
+    resetForms();
   };
   const handleDeleteStudent = (id) => { if(confirm('Delete student?')) setStudents(prev => prev.filter(s => s.id !== id)); };
+  const handleAddStaff = (e) => {
+    e.preventDefault();
+    if (selectedStaff) setStaff(prev => prev.map(s => s.id === selectedStaff.id ? { ...s, ...staffForm } : s));
+    else setStaff(prev => [...prev, { ...staffForm, id: generateId() }]);
+    setIsStaffModalOpen(false);
+  };
+  const handleDeleteStaff = (id) => { if(confirm('Delete staff?')) setStaff(prev => prev.filter(s => s.id !== id)); };
   
   const handleGraduate = (student) => {
     if(confirm(`Graduate ${student.name}?`)) {
@@ -228,7 +325,7 @@ export default function App() {
   
   // --- EXPORT/IMPORT ---
   const handleExportData = () => {
-    const dataStr = JSON.stringify(students, null, 2);
+    const dataStr = JSON.stringify({ students, staff }, null, 2);
     const link = document.createElement('a');
     link.href = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
     link.download = `mcu_backup_${new Date().toISOString().slice(0,10)}.json`;
@@ -241,7 +338,7 @@ export default function App() {
         const json = JSON.parse(evt.target.result);
         if(json.students || Array.isArray(json)) {
           if(confirm('Restore data?')) {
-            if(json.students) setStudents(json.students); 
+            if(json.students) { setStudents(json.students); if(json.staff) setStaff(json.staff); }
             else setStudents(json);
             alert('Success!');
           }
@@ -328,14 +425,23 @@ export default function App() {
     window.location.href = `mailto:${selectedStudent.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   };
 
+  const resetForms = () => {
+    setStudentForm({ name: '', regNumber: '', email: '', program: 'PhD', supervisor: '', coSupervisor: '', joinedDate: '' });
+    setScheduleForm({ date: '', time: '', venue: '', status: 'scheduled', score: '', remarks: '', docLink: '' });
+    setSelectedStudent(null);
+    setSelectedStageId(null);
+  };
+
   const FiltersBar = () => (
     <div className="flex flex-col sm:flex-row gap-2">
-      <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm">
-        <Filter size={16} className="text-gray-400" />
-        <select value={selectedSupervisor} onChange={(e) => setSelectedSupervisor(e.target.value)} className="bg-transparent text-sm text-gray-700 outline-none cursor-pointer w-full sm:w-auto">
-          {uniqueSupervisors.map(sup => (<option key={sup} value={sup}>{sup}</option>))}
-        </select>
-      </div>
+      {currentUser?.role === 'admin' && (
+        <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm">
+          <Filter size={16} className="text-gray-400" />
+          <select value={selectedSupervisor} onChange={(e) => setSelectedSupervisor(e.target.value)} className="bg-transparent text-sm text-gray-700 outline-none cursor-pointer w-full sm:w-auto">
+            {uniqueSupervisors.map(sup => (<option key={sup} value={sup}>{sup}</option>))}
+          </select>
+        </div>
+      )}
       <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm">
         <GraduationCap size={16} className="text-gray-400" />
         <select value={selectedProgram} onChange={(e) => setSelectedProgram(e.target.value)} className="bg-transparent text-sm text-gray-700 outline-none cursor-pointer w-full sm:w-auto">
@@ -497,20 +603,40 @@ export default function App() {
     )
   };
 
+  const StaffView = () => (
+    <div className="space-y-4 animate-in fade-in">
+      <div className="flex justify-between items-center bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+        <div><h2 className="text-xl font-bold text-gray-800">Staff Management</h2><p className="text-gray-500">Manage supervisors and their login credentials.</p></div>
+        <button onClick={() => openStaffModal()} className="flex items-center px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"><Plus size={18} className="mr-2" /> Add Staff</button>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        {staff.map(s => (
+          <div key={s.id} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center">
+            <div className="flex items-center gap-4">
+              <div className="h-12 w-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center font-bold text-lg">{s.name.charAt(0)}</div>
+              <div><h3 className="font-bold text-gray-900">{s.name}</h3><p className="text-sm text-gray-500 flex items-center gap-1"><Mail size={12}/> {s.email}</p><p className="text-xs text-gray-400 mt-1">{s.department}</p></div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => openStaffModal(s)} className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"><Edit size={16} /></button>
+              <button onClick={() => handleDeleteStaff(s.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg"><Trash2 size={16} /></button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
   const AlumniView = () => (
     <div className="space-y-4">
-      <div className="flex justify-between bg-white p-4 rounded-xl border border-gray-100">
-         <h2 className="font-bold text-gray-800">Alumni Archive</h2>
-         <FiltersBar />
+      <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-4">
+        <div><h2 className="text-xl font-bold text-gray-800">Alumni Archive</h2><p className="text-gray-500">View graduated students or promote them to new programs.</p></div>
+        <div className="flex gap-2"><div className="relative"><Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} /><input type="text" placeholder="Search alumni..." className="pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div><div className="hidden md:block"><FiltersBar /></div></div>
       </div>
       <div className="grid gap-4">
-        {alumniStudents.map(s => (
-          <div key={s.id} className="bg-gray-50 p-4 rounded-xl border flex justify-between items-center">
-            <div><h3 className="font-bold">{s.name}</h3><p className="text-sm text-gray-500">{s.program} • {s.regNumber} • {formatDate(s.graduationDate)}</p></div>
-            <div className="flex gap-2">
-              <button onClick={() => { setReportStudent(s); setActiveTab('report_single'); }} className="p-2 bg-white border rounded hover:bg-gray-100"><Printer size={16}/></button>
-              <button onClick={() => handlePromote(s)} className="px-3 py-1 bg-white border border-indigo-200 text-indigo-700 rounded text-sm hover:bg-indigo-50">Promote</button>
-            </div>
+        {alumniStudents.map(student => (
+          <div key={student.id} className="bg-gray-50 rounded-xl shadow-sm border border-gray-200 p-6 flex flex-col md:flex-row justify-between items-center opacity-90 hover:opacity-100 transition-opacity">
+            <div className="flex items-center gap-4 mb-4 md:mb-0"><div className="h-12 w-12 bg-gray-300 rounded-lg flex items-center justify-center text-gray-600"><GraduationCap size={24} /></div><div><h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">{student.name}<span className="px-2 py-0.5 bg-gray-200 text-gray-600 text-xs rounded-full">Alumni</span></h3><div className="text-sm text-gray-500">{student.program} • {student.regNumber} • Graduated: {formatDate(student.graduationDate)}</div></div></div>
+            <div className="flex gap-2"><button onClick={() => handleOpenIndividualReport(student)} className="px-3 py-2 bg-white border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-all shadow-sm" title="Print Final Transcript"><Printer size={18} /></button><button onClick={() => handlePromote(student)} className="px-4 py-2 bg-white border border-indigo-200 text-indigo-700 rounded-lg hover:bg-indigo-50 hover:border-indigo-300 transition-all font-medium flex items-center shadow-sm"><UserPlus size={18} className="mr-2" /> Start New Program</button></div>
           </div>
         ))}
         {alumniStudents.length === 0 && <div className="p-8 text-center text-gray-500">No Alumni Records</div>}
@@ -537,28 +663,45 @@ export default function App() {
         <input type="file" ref={csvInputRef} onChange={handleBulkCSVUpload} className="hidden" />
         <button onClick={handleCSVUploadClick} className="w-full py-2 border border-emerald-600 text-emerald-600 rounded-lg">Import CSV</button>
       </div>
+      {/* Security Settings */}
+      <div className="bg-white p-6 rounded-xl border border-gray-100">
+        <h3 className="font-bold mb-4 flex items-center gap-2"><Lock size={20}/> Security</h3>
+        <form onSubmit={handleUpdateAdminPassword}>
+          <label className="text-sm text-gray-500">New Admin Password</label>
+          <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="w-full p-2 border rounded-lg mt-1 mb-4" />
+          <button type="submit" className="w-full py-2 bg-gray-800 text-white rounded-lg">Update Password</button>
+        </form>
+      </div>
     </div>
   );
+
+  // MAIN RENDER (Using if check from start of component)
+  if (!currentUser) return <LoginView onLogin={setCurrentUser} verifyCredentials={verifyCredentials} />;
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800 font-sans">
       <style>{`@media print { .no-print, aside, nav, .sidebar { display: none !important; } body, main { margin: 0 !important; width: 100% !important; } }`}</style>
+      
+      {/* Sidebar */}
       <div className="fixed inset-y-0 left-0 w-64 bg-white border-r border-gray-200 z-30 no-print flex flex-col">
         <div className="p-6 border-b flex items-center gap-3"><div className="bg-indigo-600 p-2 rounded-lg text-white"><GraduationCap size={24}/></div><h1 className="font-bold text-gray-900">McU Postgrad</h1></div>
         <nav className="flex-1 p-4 space-y-2">
-          {[{id:'dashboard', l:'Dashboard', i:LayoutDashboard}, {id:'students', l:'Students', i:Users}, {id:'alumni', l:'Alumni', i:Archive}, {id:'reports', l:'Reports', i:FileText}, {id:'settings', l:'Settings', i:Settings}].map(m => (
+          {[{id:'dashboard', l:'Dashboard', i:LayoutDashboard}, {id:'students', l:'Students', i:Users}, {id:'staff', l:'Staff', i:Shield}, {id:'alumni', l:'Alumni', i:Archive}, {id:'reports', l:'Reports', i:FileText}, {id:'settings', l:'Settings', i:Settings}].map(m => (
+            (!['staff', 'alumni', 'reports', 'settings'].includes(m.id) || currentUser.role === 'admin') && 
             <button key={m.id} onClick={() => setActiveTab(m.id)} className={`w-full flex items-center px-4 py-3 rounded-xl transition-all ${activeTab === m.id ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-500 hover:bg-gray-50'}`}><m.i size={20} className="mr-3"/> {m.l}</button>
           ))}
         </nav>
-        <div className="p-4 border-t"><div className="bg-indigo-900 rounded-xl p-4 text-white"><p className="text-xs text-indigo-200 font-semibold">User</p><p className="truncate">Admin</p></div></div>
+        <div className="p-4 border-t"><button onClick={handleLogout} className="w-full flex items-center justify-center px-4 py-2 bg-red-50 text-red-600 rounded-lg mb-4 font-medium text-sm"><LogOut size={16} className="mr-2"/> Sign Out</button><div className="bg-indigo-900 rounded-xl p-4 text-white"><p className="text-xs text-indigo-200 font-semibold">User</p><p className="truncate">{currentUser.name}</p></div></div>
       </div>
       <main className="md:ml-64 min-h-screen p-8">
         {activeTab === 'dashboard' && <DashboardView />}
         {activeTab === 'students' && <StudentsView />}
+        {activeTab === 'staff' && <StaffView />}
         {activeTab === 'alumni' && <AlumniView />}
         {activeTab === 'reports' && <ReportView />}
         {activeTab === 'settings' && <SettingsView />}
         {activeTab === 'report_single' && <IndividualReportView />}
+        {activeTab === 'individual_report' && <IndividualReportView />}
       </main>
       
       {/* Student Modal */}
@@ -577,8 +720,8 @@ export default function App() {
               </div>
               <input type="email" placeholder="Email" className="p-2 border rounded w-full" value={studentForm.email} onChange={e => setStudentForm({...studentForm, email: e.target.value})} />
               <div className="grid grid-cols-2 gap-4">
-                <input placeholder="Supervisor" className="p-2 border rounded" value={studentForm.supervisor} onChange={e => setStudentForm({...studentForm, supervisor: e.target.value})} />
-                <input placeholder="Co-Supervisor" className="p-2 border rounded" value={studentForm.coSupervisor} onChange={e => setStudentForm({...studentForm, coSupervisor: e.target.value})} />
+                <select className="p-2 border rounded" value={studentForm.supervisor} onChange={e => setStudentForm({...studentForm, supervisor: e.target.value})}><option value="">Select Supervisor</option>{uniqueSupervisors.filter(x => x !== 'All Supervisors').map(s => <option key={s} value={s}>{s}</option>)}</select>
+                <select className="p-2 border rounded" value={studentForm.coSupervisor} onChange={e => setStudentForm({...studentForm, coSupervisor: e.target.value})}><option value="">Select Co-Supervisor</option>{uniqueSupervisors.filter(x => x !== 'All Supervisors').map(s => <option key={s} value={s}>{s}</option>)}</select>
               </div>
               <div className="flex justify-end gap-2 mt-4"><button type="button" onClick={() => setIsStudentModalOpen(false)} className="px-4 py-2 text-gray-600">Cancel</button><button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded">Save</button></div>
             </form>
@@ -611,6 +754,22 @@ export default function App() {
                 {selectedStudent && selectedStageId === (PROGRAM_STRUCTURE[selectedStudent.program]?.stages[PROGRAM_STRUCTURE[selectedStudent.program]?.stages.length - 1] || {}).id && scheduleForm.status === 'completed' ? <button type="button" onClick={() => handleGraduate(selectedStudent)} className="px-4 py-2 bg-emerald-600 text-white rounded">Graduate Student</button> : <div />}
                 <div className="flex gap-2"><button type="button" onClick={() => setIsScheduleModalOpen(false)} className="px-4 py-2 text-gray-600">Cancel</button><button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded">Save</button></div>
               </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+       {/* Staff Modal */}
+      {isStaffModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 no-print">
+          <div className="bg-white rounded-xl w-full max-w-md p-6">
+            <h3 className="text-lg font-bold mb-4">{selectedStaff ? 'Edit Staff' : 'Add Staff'}</h3>
+            <form onSubmit={handleAddStaff} className="space-y-4">
+              <input required placeholder="Name" className="w-full p-2 border rounded" value={staffForm.name} onChange={e => setStaffForm({...staffForm, name: e.target.value})} />
+              <input required type="email" placeholder="Email" className="w-full p-2 border rounded" value={staffForm.email} onChange={e => setStaffForm({...staffForm, email: e.target.value})} />
+              <input required placeholder="Department" className="w-full p-2 border rounded" value={staffForm.department} onChange={e => setStaffForm({...staffForm, department: e.target.value})} />
+              <input required placeholder="Password" className="w-full p-2 border rounded" value={staffForm.password} onChange={e => setStaffForm({...staffForm, password: e.target.value})} />
+              <div className="flex justify-end gap-2 mt-4"><button type="button" onClick={() => setIsStaffModalOpen(false)} className="px-4 py-2 text-gray-600">Cancel</button><button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded">Save</button></div>
             </form>
           </div>
         </div>
