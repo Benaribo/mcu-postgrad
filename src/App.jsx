@@ -136,6 +136,14 @@ const LoginView = ({ onLogin, verifyCredentials }) => {
     }
   };
 
+  // Add this reset function
+  const handleReset = () => {
+    if (confirm('This will reset the Admin password to default (password123). Your student data will remain safe. Continue?')) {
+      localStorage.removeItem('pg_auth_config');
+      window.location.reload();
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 font-sans">
       <div className="bg-white max-w-md w-full rounded-2xl shadow-xl overflow-hidden">
@@ -155,6 +163,7 @@ const LoginView = ({ onLogin, verifyCredentials }) => {
           <div className="mt-6 text-center text-xs text-gray-400 space-y-1">
             <p><strong>Admin Default:</strong> admin / password123</p>
             <p><strong>Staff Default:</strong> [email] / staff</p>
+            <button onClick={handleReset} type="button" className="text-indigo-400 hover:text-indigo-600 underline mt-4">Reset Admin Credentials</button>
           </div>
         </div>
       </div>
