@@ -189,10 +189,12 @@ export default function App() {
   });
   
   const [selectedSupervisor, setSelectedSupervisor] = useState('All Supervisors');
+  const [selectedProgram, setSelectedProgram] = useState('All Programs'); // New Program Filter State
+
   const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
-  const [reportStudent, setReportStudent] = useState(null); // For individual report
+  const [reportStudent, setReportStudent] = useState(null);
   const [selectedStageId, setSelectedStageId] = useState(null);
   
   const [studentForm, setStudentForm] = useState({
@@ -214,7 +216,6 @@ export default function App() {
   const uniqueSupervisors = useMemo(() => {
     const sups = new Set();
     students.forEach(s => {
-      // Safe trim to prevent crashes on bad data
       if(s.supervisor) sups.add(String(s.supervisor).trim());
       if(s.coSupervisor) sups.add(String(s.coSupervisor).trim());
     });
@@ -228,16 +229,16 @@ export default function App() {
       const matchesSupervisor = selectedSupervisor === 'All Supervisors' || 
                                 (s.supervisor && String(s.supervisor).trim() === selectedSupervisor) || 
                                 (s.coSupervisor && String(s.coSupervisor).trim() === selectedSupervisor);
-      return matchesSearch && matchesSupervisor;
+      const matchesProgram = selectedProgram === 'All Programs' || s.program === selectedProgram;
+      
+      return matchesSearch && matchesSupervisor && matchesProgram;
     });
-  }, [students, searchTerm, selectedSupervisor]);
+  }, [students, searchTerm, selectedSupervisor, selectedProgram]);
 
-  // Derived subsets for views
   const activeStudents = useMemo(() => filteredStudents.filter(s => s.status !== 'Alumni'), [filteredStudents]);
   const alumniStudents = useMemo(() => filteredStudents.filter(s => s.status === 'Alumni'), [filteredStudents]);
 
   const stats = useMemo(() => {
-    // Stats primarily focus on ACTIVE students
     const sourceData = students.filter(s => s.status !== 'Alumni'); 
     return {
       total: sourceData.length,
@@ -277,11 +278,17 @@ export default function App() {
   // Actions
   const handleAddStudent = (e) => {
     e.preventDefault();
+    
+    // VALIDATION: Check for duplicate Reg Number
+    const cleanReg = studentForm.regNumber.trim();
+    if (!selectedStudent && students.some(s => s.regNumber.toLowerCase() === cleanReg.toLowerCase())) {
+      alert('Error: A student with this Registration Number already exists.');
+      return;
+    }
+
     if (selectedStudent && selectedStudent.id) {
-      // Edit mode logic
       setStudents(prev => prev.map(s => s.id === selectedStudent.id ? { ...s, ...studentForm } : s));
     } else {
-      // Add mode logic
       setStudents(prev => [...prev, { ...studentForm, id: generateId(), progress: {}, status: 'Active' }]);
     }
     setIsStudentModalOpen(false);
@@ -303,13 +310,12 @@ export default function App() {
   };
 
   const handlePromote = (alumnus) => {
-    // Open add modal pre-filled with alumni details but clean program data
-    setSelectedStudent(null); // Clear selected student ID to treat as NEW entry
+    setSelectedStudent(null); 
     setStudentForm({
       name: alumnus.name,
-      regNumber: '', // Likely needs new reg number
+      regNumber: '', 
       email: alumnus.email,
-      program: 'MSc', // Default next step recommendation?
+      program: 'MSc', 
       supervisor: '',
       coSupervisor: '',
       joinedDate: new Date().toISOString().split('T')[0]
@@ -374,7 +380,6 @@ export default function App() {
     event.target.value = null;
   };
 
-  // CSV Bulk Import Logic
   const handleDownloadTemplate = () => {
     const headers = "Full Name,Reg Number,Email,Program (PhD/MSc/MPhil/PGD),Supervisor,Co-Supervisor,Joined Date (YYYY-MM-DD)\n";
     const example = "Jane Doe,PG/2024/001,jane@test.com,PhD,Dr. A. Smith,Prof. B. Jones,2023-01-15";
@@ -398,6 +403,7 @@ export default function App() {
       const text = evt.target.result;
       const lines = text.split('\n');
       const newStudents = [];
+      const duplicateRegs = [];
       
       for(let i = 1; i < lines.length; i++) {
         const line = lines[i].trim();
@@ -407,12 +413,20 @@ export default function App() {
 
         const [name, regNumber, email, program, supervisor, coSupervisor, joinedDate] = parts;
         const cleanProgram = program?.trim();
+        const cleanReg = regNumber?.trim();
+
         if (!PROGRAM_STRUCTURE[cleanProgram]) continue; 
+
+        // DUPLICATE CHECK
+        if (students.some(s => s.regNumber === cleanReg) || newStudents.some(s => s.regNumber === cleanReg)) {
+          duplicateRegs.push(cleanReg);
+          continue;
+        }
 
         newStudents.push({
           id: generateId(),
           name: name?.trim(),
-          regNumber: regNumber?.trim(),
+          regNumber: cleanReg,
           email: email?.trim(),
           program: cleanProgram,
           supervisor: supervisor?.trim(),
@@ -424,10 +438,12 @@ export default function App() {
       }
 
       if(newStudents.length > 0) {
-        if(confirm(`Found ${newStudents.length} valid students. Import them?`)) {
+        if(confirm(`Found ${newStudents.length} valid new students.${duplicateRegs.length > 0 ? ` Skipped ${duplicateRegs.length} duplicates.` : ''} Import them?`)) {
           setStudents(prev => [...prev, ...newStudents]);
           alert('Import successful!');
         }
+      } else if (duplicateRegs.length > 0) {
+        alert(`No new students imported. ${duplicateRegs.length} duplicate Registration Numbers found.`);
       } else {
         alert('No valid students found in CSV. Please check the template format.');
       }
@@ -436,7 +452,6 @@ export default function App() {
     e.target.value = null;
   };
 
-  // --- External Integrations ---
   const handleAddToCalendar = () => {
     if (!scheduleForm.date || !selectedStudent) return;
     const stageLabel = PROGRAM_STRUCTURE[selectedStudent.program].stages.find(s => s.id === selectedStageId)?.label;
@@ -509,12 +524,9 @@ export default function App() {
   };
 
   const exportToCSV = () => {
-    // Export ALL students or filtered view? Let's use filtered view which might include Alumni if tab is Alumni
     let csvContent = "data:text/csv;charset=utf-8,";
     csvContent += "Name,Reg Number,Email,Program,Supervisor,Co-Supervisor,Status,Progress %\n";
-    // Depending on tab, filteredStudents is either Active or Alumni
     const listToExport = activeTab === 'alumni' ? alumniStudents : activeStudents;
-    
     listToExport.forEach(s => {
       const row = `${s.name},${s.regNumber},${s.email || ''},${s.program},${s.supervisor},${s.coSupervisor || ''},${s.status},${calculateProgress(s)}%`;
       csvContent += row + "\n";
@@ -530,18 +542,37 @@ export default function App() {
 
   const triggerPrint = () => window.print();
 
-  const SupervisorFilter = () => (
-    <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm">
-      <Filter size={16} className="text-gray-400" />
-      <select 
-        value={selectedSupervisor}
-        onChange={(e) => setSelectedSupervisor(e.target.value)}
-        className="bg-transparent text-sm text-gray-700 outline-none cursor-pointer w-full sm:w-auto"
-      >
-        {uniqueSupervisors.map(sup => (
-          <option key={sup} value={sup}>{sup}</option>
-        ))}
-      </select>
+  // --- REUSABLE FILTER COMPONENT ---
+  const FiltersBar = () => (
+    <div className="flex flex-col sm:flex-row gap-2">
+      {/* Supervisor Filter */}
+      <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm">
+        <Filter size={16} className="text-gray-400" />
+        <select 
+          value={selectedSupervisor}
+          onChange={(e) => setSelectedSupervisor(e.target.value)}
+          className="bg-transparent text-sm text-gray-700 outline-none cursor-pointer w-full sm:w-auto"
+        >
+          {uniqueSupervisors.map(sup => (
+            <option key={sup} value={sup}>{sup}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Program Filter */}
+      <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm">
+        <GraduationCap size={16} className="text-gray-400" />
+        <select 
+          value={selectedProgram}
+          onChange={(e) => setSelectedProgram(e.target.value)}
+          className="bg-transparent text-sm text-gray-700 outline-none cursor-pointer w-full sm:w-auto"
+        >
+          <option value="All Programs">All Programs</option>
+          {Object.keys(PROGRAM_STRUCTURE).map(prog => (
+            <option key={prog} value={prog}>{prog}</option>
+          ))}
+        </select>
+      </div>
     </div>
   );
 
@@ -549,19 +580,47 @@ export default function App() {
 
   const DashboardView = () => (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <h2 className="text-xl font-bold text-gray-800">Overview</h2>
-        <SupervisorFilter />
+        <FiltersBar />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Active Students', val: stats.total, icon: Users, color: 'bg-indigo-600' },
-          { label: 'PhD Candidates', val: stats.phd, icon: GraduationCap, color: 'bg-purple-600' },
-          { label: 'Total Alumni', val: stats.alumni, icon: Archive, color: 'bg-gray-600' },
-          { label: 'Upcoming Events', val: stats.upcoming, icon: Calendar, color: 'bg-amber-600' },
+          { 
+            label: 'Active Students', 
+            val: stats.total, 
+            icon: Users, 
+            color: 'bg-indigo-600',
+            action: () => { setActiveTab('students'); setSelectedProgram('All Programs'); }
+          },
+          { 
+            label: 'PhD Candidates', 
+            val: stats.phd, 
+            icon: GraduationCap, 
+            color: 'bg-purple-600',
+            action: () => { setActiveTab('students'); setSelectedProgram('PhD'); } // Quick Filter
+          },
+          { 
+            label: 'Total Alumni', 
+            val: stats.alumni, 
+            icon: Archive, 
+            color: 'bg-gray-600',
+            action: () => setActiveTab('alumni')
+          },
+          { 
+            label: 'Upcoming Events', 
+            val: stats.upcoming, 
+            icon: Calendar, 
+            color: 'bg-amber-600',
+            action: () => setActiveTab('students')
+          },
         ].map((stat, idx) => (
-          <div key={idx} className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 flex items-center justify-between hover:shadow-md transition-shadow">
+          <div 
+            key={idx} 
+            onClick={stat.action}
+            className="bg-white rounded-xl shadow-sm p-6 border border-gray-100 flex items-center justify-between hover:shadow-md transition-all cursor-pointer transform hover:-translate-y-1"
+          >
             <div>
               <p className="text-gray-500 text-sm font-medium">{stat.label}</p>
               <h3 className="text-3xl font-bold text-gray-800 mt-1">{stat.val}</h3>
@@ -623,7 +682,7 @@ export default function App() {
             />
           </div>
           <div className="hidden md:block">
-            <SupervisorFilter />
+            <FiltersBar />
           </div>
         </div>
         
@@ -634,6 +693,10 @@ export default function App() {
           >
             <Plus size={18} className="mr-2" /> <span className="hidden sm:inline">Add Student</span><span className="sm:hidden">Add</span>
           </button>
+        </div>
+        {/* Mobile Filters */}
+        <div className="md:hidden w-full">
+           <FiltersBar />
         </div>
       </div>
 
@@ -753,9 +816,14 @@ export default function App() {
 
   const AlumniView = () => (
     <div className="space-y-4">
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-4">
-        <h2 className="text-xl font-bold text-gray-800">Alumni Archive</h2>
-        <p className="text-gray-500">View graduated students or promote them to new programs.</p>
+      <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white p-6 rounded-xl shadow-sm border border-gray-100 mb-4">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">Alumni Archive</h2>
+          <p className="text-gray-500">View graduated students or promote them to new programs.</p>
+        </div>
+        <div className="hidden md:block">
+           <FiltersBar />
+        </div>
       </div>
 
       <div className="grid gap-4">
@@ -810,9 +878,9 @@ export default function App() {
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between items-center gap-4 no-print">
         <div>
           <h2 className="text-xl font-bold text-gray-800">Generate Reports</h2>
-          <p className="text-gray-500">Export student data. Use the filter below to refine the report.</p>
+          <p className="text-gray-500">Export student data. Use the filters below to refine the report.</p>
           <div className="mt-4">
-             <SupervisorFilter />
+             <FiltersBar />
           </div>
         </div>
         <div className="flex gap-3">
@@ -832,11 +900,18 @@ export default function App() {
           <div className="w-24 h-1 bg-indigo-900 mx-auto my-4"></div>
           <h3 className="text-lg text-gray-600 font-medium uppercase tracking-widest">Postgraduate Student Progress Report</h3>
           
-          {selectedSupervisor !== 'All Supervisors' && (
-             <p className="text-sm font-bold text-indigo-700 mt-2 bg-indigo-50 inline-block px-3 py-1 rounded-full border border-indigo-100">
-               Supervisor: {selectedSupervisor}
-             </p>
-          )}
+          <div className="flex gap-3 justify-center mt-2">
+            {selectedSupervisor !== 'All Supervisors' && (
+               <p className="text-sm font-bold text-indigo-700 bg-indigo-50 inline-block px-3 py-1 rounded-full border border-indigo-100">
+                 Supervisor: {selectedSupervisor}
+               </p>
+            )}
+            {selectedProgram !== 'All Programs' && (
+               <p className="text-sm font-bold text-purple-700 bg-purple-50 inline-block px-3 py-1 rounded-full border border-purple-100">
+                 Program: {selectedProgram}
+               </p>
+            )}
+          </div>
           
           <p className="text-sm text-gray-400 mt-2">Generated on {new Date().toLocaleDateString()}</p>
         </div>
